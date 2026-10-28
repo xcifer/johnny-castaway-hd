@@ -69,18 +69,36 @@ func NewBackground(src *resource.Image, pal color.Palette) *Sprite {
 	return NewSprite(&img, pal, false)
 }
 
-// Layer is a transparent, frame-sized image that the game draws into.
+// Layer is a transparent, frame-sized image that the game draws into. Its
+// image is only allocated when something is drawn, so unused layers cost
+// no memory.
 type Layer struct {
-	img  *ebiten.Image
-	clip image.Rectangle
+	img    *ebiten.Image
+	w, h   int
+	clip   image.Rectangle
+	hidden bool
+}
+
+func (l *Layer) image() *ebiten.Image {
+	if l.img == nil {
+		l.img = ebiten.NewImage(l.w, l.h)
+	}
+	return l.img
 }
 
 // Clear makes the whole layer transparent.
-func (l *Layer) Clear() { l.img.Clear() }
+func (l *Layer) Clear() {
+	if l.img != nil {
+		l.img.Clear()
+	}
+}
+
+// SetVisible shows or hides the layer. Layers start visible.
+func (l *Layer) SetVisible(v bool) { l.hidden = !v }
 
 // target returns the part of the layer inside the clip zone.
 func (l *Layer) target() *ebiten.Image {
-	return l.img.SubImage(l.clip).(*ebiten.Image)
+	return l.image().SubImage(l.clip).(*ebiten.Image)
 }
 
 // Renderer owns the frame and its layers. They are drawn back to front:
@@ -111,7 +129,7 @@ func New(screenW, screenH int) (*Renderer, error) {
 
 func (r *Renderer) newLayer() *Layer {
 	w, h := r.Frame.Size()
-	return &Layer{img: ebiten.NewImage(w, h), clip: r.Frame.Full()}
+	return &Layer{w: w, h: h, clip: r.Frame.Full()}
 }
 
 // NewLayer adds a layer on top of the existing ones.
@@ -168,7 +186,7 @@ func (r *Renderer) drawScaled(dst *ebiten.Image, s *Sprite, fx, fy float64, flip
 func (r *Renderer) FillRect(l *Layer, x, y, w, h int, c color.Color) {
 	rect := r.Frame.LogicalRect(x+r.Origin.X, y+r.Origin.Y, w, h).Intersect(l.clip)
 	if !rect.Empty() {
-		l.img.SubImage(rect).(*ebiten.Image).Fill(c)
+		l.image().SubImage(rect).(*ebiten.Image).Fill(c)
 	}
 }
 
@@ -178,7 +196,7 @@ func (r *Renderer) FillRect(l *Layer, x, y, w, h int, c color.Color) {
 // column without repeating it (column 640 shows 638, column -1 shows 1):
 // repeating it would break the checkerboard dithering into a visible stripe.
 func (r *Renderer) SetBackground(s *Sprite) {
-	bg := r.Background.img
+	bg := r.Background.image()
 	bg.Clear()
 	r.drawScaled(bg, s, float64(r.Frame.X(1-s.W)), 0, true)
 	r.drawScaled(bg, s, float64(r.Frame.X(s.W-1)), 0, true)
@@ -189,23 +207,23 @@ func (r *Renderer) SetBackground(s *Sprite) {
 // into the saved-zones layer, where they stay until it is cleared.
 func (r *Renderer) CopyZoneToSaved(l *Layer, x, y, w, h int) {
 	rect := r.Frame.LogicalRect(x+r.Origin.X, y+r.Origin.Y, w, h).Intersect(r.Frame.Full())
-	if rect.Empty() {
+	if rect.Empty() || l.img == nil {
 		return
 	}
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(float64(rect.Min.X), float64(rect.Min.Y))
-	r.Saved.img.DrawImage(l.img.SubImage(rect).(*ebiten.Image), op)
+	r.Saved.image().DrawImage(l.img.SubImage(rect).(*ebiten.Image), op)
 }
 
-// Compose draws all layers onto screen, inside the frame, with black bars
-// around it.
+// Compose draws all visible layers onto screen, inside the frame, with
+// black bars around it.
 func (r *Renderer) Compose(screen *ebiten.Image) {
 	screen.Fill(color.Black)
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(float64(r.Frame.Rect.Min.X), float64(r.Frame.Rect.Min.Y))
-	screen.DrawImage(r.Background.img, op)
-	screen.DrawImage(r.Saved.img, op)
-	for _, l := range r.layers {
-		screen.DrawImage(l.img, op)
+	for _, l := range append([]*Layer{r.Background, r.Saved}, r.layers...) {
+		if l.img != nil && !l.hidden {
+			screen.DrawImage(l.img, op)
+		}
 	}
 }

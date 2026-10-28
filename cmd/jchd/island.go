@@ -11,8 +11,10 @@ import (
 	"github.com/xcifer/johnny-castaway-hd/internal/resource"
 )
 
-// gameData is the decoded original data the island scene needs.
+// gameData is the original data: the archive scripts load from, and what
+// the island scene needs decoded.
 type gameData struct {
+	archive    *resource.Archive
 	palette    color.Palette
 	oceans     []*resource.Image
 	background *resource.Sprites // BACKGRND.BMP: island, palm, clouds, waves
@@ -32,7 +34,7 @@ func loadGameData(dir string) (*gameData, error) {
 		return nil, fmt.Errorf("%s not found", name)
 	}
 
-	d := &gameData{}
+	d := &gameData{archive: a}
 	e, err := find("JOHNCAST.PAL")
 	if err != nil {
 		return nil, err
@@ -87,15 +89,17 @@ const (
 	arriveDelay = 80
 )
 
-// islandScene shows the island at high tide with waves and Johnny walking
-// every path of the walk table in turn. Layout follows jc_reborn's island.c.
-// It stands in for the scripted scenes until those are implemented.
+// islandScene shows the island at high tide with waves and, if walking,
+// Johnny walking every path of the walk table in turn. Layout follows
+// jc_reborn's island.c. It stands in for the scripted scenes until those
+// are implemented.
 type islandScene struct {
 	r       *render.Renderer
 	bg      []*render.Sprite
 	walk    []*render.Sprite
 	paths   [][]resource.WalkStep
-	walkers *render.Layer
+	walkers *render.Layer // nil if Johnny doesn't walk
+	still   bool          // the waves stop when the island is replaced
 
 	waveSlot, waveFrame int // which shore wave to redraw, and its frame
 	path, step          int
@@ -103,7 +107,7 @@ type islandScene struct {
 	tick                int
 }
 
-func newIslandScene(r *render.Renderer, d *gameData, rng *rand.Rand) *islandScene {
+func newIslandScene(r *render.Renderer, d *gameData, rng *rand.Rand, walking bool) *islandScene {
 	s := &islandScene{r: r, paths: d.walkPaths}
 	for i := range d.background.Frames {
 		s.bg = append(s.bg, render.NewSprite(&d.background.Frames[i], d.palette, true))
@@ -132,8 +136,10 @@ func newIslandScene(r *render.Renderer, d *gameData, rng *rand.Rand) *islandScen
 		s.animateWaves()
 	}
 
-	s.walkers = r.NewLayer()
-	s.drawWalker()
+	if walking {
+		s.walkers = r.NewLayer()
+		s.drawWalker()
+	}
 	return s
 }
 
@@ -156,11 +162,11 @@ func (s *islandScene) drawWalker() {
 // Tick advances the scene by one 20 ms tick.
 func (s *islandScene) Tick() {
 	s.tick++
-	if s.tick >= s.nextWave {
+	if s.tick >= s.nextWave && !s.still {
 		s.animateWaves()
 		s.nextWave = s.tick + waveDelay
 	}
-	if s.tick >= s.nextWalk {
+	if s.walkers != nil && s.tick >= s.nextWalk {
 		s.nextWalk = s.tick + walkDelay
 		s.step++
 		if s.step == len(s.paths[s.path]) {
@@ -176,5 +182,8 @@ func (s *islandScene) Tick() {
 
 // Status describes what is playing, for the debug overlay.
 func (s *islandScene) Status() string {
+	if s.walkers == nil {
+		return ""
+	}
 	return fmt.Sprintf("walk path %d/%d step %d/%d", s.path+1, len(s.paths), s.step+1, len(s.paths[s.path]))
 }

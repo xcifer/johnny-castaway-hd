@@ -1,8 +1,9 @@
 // Command jchd is the Johnny Castaway HD screensaver.
 //
-// For now it shows the island with Johnny walking. Normally any key or mouse
-// click exits. With -debug, keys control the display instead (F1 overlay,
-// F2 scaling filter) and Esc exits.
+// For now it shows the island with Johnny walking, or with -ttm plays clips
+// of one animation script. Normally any key or mouse click exits. With
+// -debug, keys control the display instead (F1 overlay, F2 scaling filter)
+// and Esc exits.
 package main
 
 import (
@@ -40,16 +41,25 @@ type options struct {
 	shot      string
 	shotSize  image.Point
 	shotTicks int
+	ttm       string
+}
+
+// scene is what plays on the screen.
+type scene interface {
+	Tick()
+	Status() string
 }
 
 type game struct {
 	opt     options
 	data    *gameData
 	dataErr error
+	ttm     ttmSpec
 
 	screen   image.Point // screen size in pixels, from LayoutF
 	renderer *render.Renderer
-	scene    *islandScene
+	scene    scene
+	ticks    int // scene ticks played
 	overlay  bool
 	frames   int
 	start    time.Time // first tick
@@ -63,8 +73,14 @@ func (g *game) newScene(w, h int) error {
 	}
 	r.Filter = g.opt.filter
 	g.renderer = r
-	if g.data != nil {
-		g.scene = newIslandScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)))
+	g.ticks = 0
+	switch {
+	case g.data == nil:
+		g.scene = nil
+	case g.ttm.ttm != nil:
+		g.scene = newTTMScene(r, g.data, g.opt.seed, g.ttm)
+	default:
+		g.scene = newIslandScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), true)
 	}
 	return nil
 }
@@ -106,6 +122,7 @@ func (g *game) Update() error {
 	}
 	if g.scene != nil {
 		g.scene.Tick()
+		g.ticks++
 	}
 	return nil
 }
@@ -143,15 +160,16 @@ func (g *game) Draw(screen *ebiten.Image) {
 func (g *game) status() string {
 	f := g.renderer.Frame
 	w, h := f.Size()
-	scene := "none"
-	tick := 0
-	if g.scene != nil {
-		scene = g.scene.Status()
-		tick = g.scene.tick
+	ttm, status := "none", ""
+	if g.ttm.ttm != nil {
+		ttm = g.opt.ttm
 	}
-	return fmt.Sprintf("FPS %.1f  TPS %.1f  tick %d (%.1f s)\nscreen %dx%d  frame %dx%d  scale %.3g\nfilter %s (F2)\nADS: none  TTM: none  %s",
-		ebiten.ActualFPS(), ebiten.ActualTPS(), tick, float64(tick)/ticksPerSecond,
-		f.Screen.X, f.Screen.Y, w, h, f.Scale, g.renderer.Filter, scene)
+	if g.scene != nil {
+		status = g.scene.Status()
+	}
+	return fmt.Sprintf("FPS %.1f  TPS %.1f  tick %d (%.1f s)\nscreen %dx%d  frame %dx%d  scale %.3g\nfilter %s (F2)\nADS: none  TTM: %s  %s",
+		ebiten.ActualFPS(), ebiten.ActualTPS(), g.ticks, float64(g.ticks)/ticksPerSecond,
+		f.Screen.X, f.Screen.Y, w, h, f.Scale, g.renderer.Filter, ttm, status)
 }
 
 // drawText prints text at the top left, scaled up to stay readable.
@@ -194,6 +212,7 @@ func (g *game) screenshot() error {
 	}
 	for range g.opt.shotTicks {
 		g.scene.Tick()
+		g.ticks++
 	}
 	img := ebiten.NewImage(g.opt.shotSize.X, g.opt.shotSize.Y)
 	g.renderer.Compose(img)
@@ -226,6 +245,7 @@ func parseFlags() options {
 	flag.StringVar(&opt.shot, "shot", "", "render one frame to this PNG file and exit")
 	flag.StringVar(&shotSize, "shotsize", "1920x1080", "screen size for -shot")
 	flag.IntVar(&opt.shotTicks, "shotticks", 0, "ticks to run before -shot")
+	flag.StringVar(&opt.ttm, "ttm", "", "play clips of one animation script over and over: NAME or NAME:TAG,TAG,...")
 	flag.Parse()
 
 	switch filter {
@@ -253,6 +273,12 @@ func main() {
 	g.data, g.dataErr = loadGameData(opt.dataDir)
 	if g.dataErr != nil {
 		log.Printf("game data: %v", g.dataErr)
+	}
+	if opt.ttm != "" && g.data != nil {
+		var err error
+		if g.ttm, err = parseTTMSpec(g.data, opt.ttm); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	ebiten.SetTPS(ticksPerSecond)
