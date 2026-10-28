@@ -6,7 +6,7 @@ This engine learns from, and ports parts of, these projects:
 
 | Project | License | Used for |
 |---|---|---|
-| [jno6809/jc_reborn](https://github.com/jno6809/jc_reborn) | GPL-3.0 | RLE/LZW decompression (ported in `internal/resource/compress.go`), resource layouts, opcode names and argument counts, sound file hashes |
+| [jno6809/jc_reborn](https://github.com/jno6809/jc_reborn) | GPL-3.0 | RLE/LZW decompression (ported in `internal/resource/compress.go`), resource layouts, opcode names and argument counts, sound file hashes, layer model, tick rate, island layout, walk table location |
 | [xesf/castaway](https://github.com/xesf/castaway) | MIT | Resource file format documentation, palette and sound offset tables used as cross-checks |
 | [ScummVM](https://www.scummvm.org/) `engines/dgds` | GPL-3.0 | Dynamix DGDS formats and decompression |
 | [fbreve/Johnny-Castaway-Enhanced](https://github.com/fbreve/Johnny-Castaway-Enhanced) | none stated | Behavioral reference only. **No code copied.** |

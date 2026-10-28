@@ -35,7 +35,21 @@ Requires [Go](https://go.dev/dl/) 1.27 or newer. No C compiler is needed.
 go build -o bin/jchd.exe ./cmd/jchd
 ```
 
-Run `bin/jchd.exe` (fullscreen; any key or mouse click exits) or `bin/jchd.exe -windowed`.
+Run `bin/jchd.exe` (fullscreen; any key or mouse click exits). It currently shows the island
+with Johnny walking.
+
+| Option | Effect |
+|---|---|
+| `-windowed` | Run in a 1280×720 window |
+| `-debug` | Keys control the display: F1 info overlay, F2 scaling filter, Esc exits |
+| `-filter sharp\|nearest\|smooth` | How the original art is scaled up (default `sharp`) |
+| `-data DIR` | Game data folder (default `gamedata`) |
+| `-seed N` | Fixed random seed, for repeatable runs |
+| `-shot FILE.png -shotsize 3840x2160 -shotticks N` | Render one frame at any size after N ticks, save it and exit |
+
+The picture is always 16:9: the original 4:3 scene is centered and the sea extends to the sides.
+On screens with another shape it gets black bars. The game clock is described in
+[docs/timing.md](docs/timing.md).
 
 ## Inspecting the game data
 

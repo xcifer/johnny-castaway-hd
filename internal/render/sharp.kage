@@ -1,0 +1,29 @@
+//kage:unit pixels
+
+package main
+
+// Sharp bilinear scaling: each source pixel is drawn as a solid block, and
+// only the boundary between two blocks (about one screen pixel wide) is
+// blended. This keeps pixel art crisp at non-integer scales like 2.25
+// without the uneven pixel widths of nearest-neighbor scaling.
+
+// Scale is the number of screen pixels per source pixel.
+var Scale float
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	origin := imageSrc0Origin()
+	p := srcPos - origin - 0.5
+	i := floor(p)
+	f := clamp((p-i-0.5)*Scale+0.5, 0, 1)
+
+	// Samples are clamped to the image so its outermost pixels are repeated
+	// rather than blended with transparency, which would leave a faint seam
+	// where two images meet.
+	lo := origin + 0.5
+	hi := origin + imageSrc0Size() - 0.5
+	c00 := imageSrc0At(clamp(origin+i+vec2(0.5, 0.5), lo, hi))
+	c10 := imageSrc0At(clamp(origin+i+vec2(1.5, 0.5), lo, hi))
+	c01 := imageSrc0At(clamp(origin+i+vec2(0.5, 1.5), lo, hi))
+	c11 := imageSrc0At(clamp(origin+i+vec2(1.5, 1.5), lo, hi))
+	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y) * color
+}
