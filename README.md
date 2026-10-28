@@ -37,6 +37,17 @@ go build -o bin/jchd.exe ./cmd/jchd
 
 Run `bin/jchd.exe` (fullscreen; any key or mouse click exits) or `bin/jchd.exe -windowed`.
 
+## Inspecting the game data
+
+```
+go run ./cmd/jcdump
+```
+
+Extracts every sprite, background, script and sound into `gamedata/dump/`. Open
+`gamedata/dump/index.html` in a browser to browse them. Format notes: [docs/formats.md](docs/formats.md).
+
+Tests that need the game data skip when `gamedata/` is empty: `go test ./...`
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE) and [CREDITS.md](CREDITS.md).
