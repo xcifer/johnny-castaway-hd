@@ -16,5 +16,6 @@ Libraries:
 | Library | License |
 |---|---|
 | [Ebitengine](https://ebitengine.org/) | Apache-2.0 |
+| `blast.c` by Mark Adler, from [zlib](https://zlib.net/) `contrib/blast` (ported to Go in `internal/install/explode.go`) | zlib |
 
 Where code is ported from a reference project, the source file names the original file it came from.
