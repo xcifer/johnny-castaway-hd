@@ -1,0 +1,36 @@
+# --- Copyrighted game data: NEVER commit ---
+# User-supplied original files live here.
+/gamedata/
+# jcdump output (extracted sprites, scripts, sounds).
+dump/
+# Original files, wherever they end up. Patterns are listed in both cases
+# because git's case-insensitivity depends on core.ignorecase.
+SCRANTIC.SCR
+scrantic.scr
+RESOURCE.MAP
+resource.map
+RESOURCE.0*
+resource.0*
+# Extracted or derived assets.
+*.wav
+*.WAV
+*.BMP
+*.SCR
+*.PAL
+*.TTM
+*.ADS
+# Reference recordings of the original contain its art.
+/refvideos/
+# HD art belongs in the separate art-pack repo.
+/artpack/
+
+# --- Build output ---
+/bin/
+*.exe
+*.scr
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
