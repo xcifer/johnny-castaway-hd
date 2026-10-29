@@ -11,6 +11,7 @@ import (
 	"github.com/xcifer/johnny-castaway-hd/internal/render"
 	"github.com/xcifer/johnny-castaway-hd/internal/resource"
 	"github.com/xcifer/johnny-castaway-hd/internal/script"
+	"github.com/xcifer/johnny-castaway-hd/internal/story"
 )
 
 // loopPause is how long the empty island shows between two plays of a
@@ -103,6 +104,21 @@ func parseADSSpec(d *gameData, arg string) (adsSpec, error) {
 	return adsSpec{}, fmt.Errorf("%s has no scene %q; its scenes are:\n  %s", name, tag, strings.Join(scenes, "\n  "))
 }
 
+// loadScripts loads the animation scripts a scene script uses, by slot.
+func loadScripts(d *gameData, ads *resource.ADS) map[uint16]*script.Script {
+	scripts := map[uint16]*script.Script{}
+	for _, res := range ads.Resources {
+		e := d.archive.Find(res.Name)
+		if e == nil {
+			continue
+		}
+		if ttm, err := resource.DecodeTTM(e); err == nil {
+			scripts[res.ID] = script.NewScript(res.Name, ttm)
+		}
+	}
+	return scripts
+}
+
 // scriptScene plays clips of one script (-ttm) or one scene of a scene
 // script (-ads) over the island, then again after a pause, for checking
 // them against the original. With -ttm, the clips that load pictures must
@@ -116,7 +132,7 @@ type scriptScene struct {
 	ttm    *ttmSpec
 	ads    *adsSpec
 	sc     *script.Script
-	island *islandScene
+	island *island
 	sched  *script.Scheduler
 	scene  *script.Scene
 	pause  int
@@ -139,24 +155,13 @@ func newScriptScene(r *render.Renderer, d *gameData, seed uint64, ttm *ttmSpec, 
 // start redraws the island, the same each time, and starts the clips or
 // the scene.
 func (s *scriptScene) start() {
-	s.r.Saved.Clear()
-	s.island = newIslandScene(s.r, s.d, rand.New(rand.NewPCG(s.seed, 0)), false, s.at)
+	s.island = newIsland(s.r, s.d, rand.New(rand.NewPCG(s.seed, 0)), story.Island{At: s.at})
 	s.plays++
 	if s.ads != nil {
 		// Each play loads the scene's scripts afresh, as the original
 		// does for every scene.
-		scripts := map[uint16]*script.Script{}
-		for _, res := range s.ads.ads.Resources {
-			e := s.d.archive.Find(res.Name)
-			if e == nil {
-				continue
-			}
-			if ttm, err := resource.DecodeTTM(e); err == nil {
-				scripts[res.ID] = script.NewScript(res.Name, ttm)
-			}
-		}
 		// The tag was checked when parsing the option.
-		s.scene, _ = script.NewScene(s.sched, s.ads.name, s.ads.ads, scripts, s.ads.tag)
+		s.scene, _ = script.NewScene(s.sched, s.ads.name, s.ads.ads, loadScripts(s.d, s.ads.ads), s.ads.tag)
 		return
 	}
 	if len(s.ttm.tags) == 0 {

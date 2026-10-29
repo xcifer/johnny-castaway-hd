@@ -35,8 +35,12 @@ Requires [Go](https://go.dev/dl/) 1.27 or newer. No C compiler is needed.
 go build -o bin/jchd.exe ./cmd/jchd
 ```
 
-Run `bin/jchd.exe` (fullscreen; any key or mouse click exits). It currently shows the island
-with Johnny walking.
+Run `bin/jchd.exe` (fullscreen; any key or mouse click exits). It plays the story: scene after
+scene on the island, with Johnny walking from one to the next. Night, holidays (Halloween
+29-31 October, St Patrick's Day 15-17 March, Christmas 23-25 December, New Year 29 December
+to 1 January) and the raft Johnny builds follow the clock and the day of the story, which
+moves on once for each date the screensaver runs and is kept in
+`%APPDATA%\JohnnyCastawayHD\progress.json`. See [docs/story.md](docs/story.md).
 
 | Option | Effect |
 |---|---|
@@ -49,6 +53,8 @@ with Johnny walking.
 | `-ttm NAME` or `-ttm NAME:TAG,TAG` | Play one animation script, or some of its clips, over and over (see [docs/ttm-opcodes.md](docs/ttm-opcodes.md)) |
 | `-ads NAME:SCENE` | Play one scene of a scene script over and over (see [docs/ads-opcodes.md](docs/ads-opcodes.md)) |
 | `-left` | Move the island to the left, as some scenes do (for `-ttm` and `-ads`) |
+| `-day N` | Play day N (1-11) of the story instead of the saved day, without saving |
+| `-date "2026-12-24 15:30"` | Pretend the clock started at this time, for night and holidays, without saving |
 | `-frames N` | Exit after N ticks (64 a second) and log the measured tick rate |
 
 The picture is always 16:9: the original 4:3 scene is centered and the sea extends to the sides.

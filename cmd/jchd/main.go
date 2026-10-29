@@ -1,9 +1,9 @@
 // Command jchd is the Johnny Castaway HD screensaver.
 //
-// For now it shows the island with Johnny walking, or with -ttm plays clips
-// of one animation script, or with -ads one scene of a scene script. Normally any key or mouse click exits. With
-// -debug, keys control the display instead (F1 overlay, F2 scaling filter)
-// and Esc exits.
+// It plays the story of Johnny on his island. For checking the original's
+// scripts, -ttm plays clips of one animation script and -ads one scene of a
+// scene script. Normally any key or mouse click exits. With -debug, keys
+// control the display instead (F1 overlay, F2 scaling filter) and Esc exits.
 package main
 
 import (
@@ -26,6 +26,7 @@ import (
 
 	"github.com/xcifer/johnny-castaway-hd/internal/render"
 	"github.com/xcifer/johnny-castaway-hd/internal/script"
+	"github.com/xcifer/johnny-castaway-hd/internal/story"
 )
 
 // The game clock runs at 64 ticks a second, and scenes move on once per
@@ -46,6 +47,8 @@ type options struct {
 	ttm       string
 	ads       string
 	left      bool // island moved left, for scripts of scenes that need it
+	day       int  // day of the story, instead of the saved one
+	date      string
 }
 
 // scene is what plays on the screen. Tick advances it by one redraw.
@@ -60,6 +63,8 @@ type game struct {
 	dataErr error
 	ttm     *ttmSpec
 	ads     *adsSpec
+	now     func() time.Time
+	day     func() int
 
 	screen   image.Point // screen size in pixels, from LayoutF
 	renderer *render.Renderer
@@ -85,7 +90,7 @@ func (g *game) newScene(w, h int) error {
 	case g.ttm != nil || g.ads != nil:
 		g.scene = newScriptScene(r, g.data, g.opt.seed, g.ttm, g.ads, g.island())
 	default:
-		g.scene = newIslandScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), true, g.island())
+		g.scene = newStoryScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), g.now, g.day)
 	}
 	return nil
 }
@@ -100,10 +105,14 @@ func (g *game) island() image.Point {
 
 func (g *game) Update() error {
 	if g.opt.shot != "" {
-		if err := g.screenshot(); err != nil {
+		done, err := g.screenshot()
+		if err != nil {
 			return err
 		}
-		return ebiten.Termination
+		if done {
+			return ebiten.Termination
+		}
+		return nil
 	}
 
 	if g.frames == 0 {
@@ -228,17 +237,27 @@ func (g *game) Layout(outsideW, outsideH int) (int, int) {
 	panic("LayoutF is used instead")
 }
 
+// shotTicksPerFrame is how many ticks -shot runs in one frame. Drawing is
+// only carried out at the end of a frame, so running hours of ticks in one
+// would pile up all their drawing in memory.
+const shotTicksPerFrame = 1024
+
 // screenshot renders the scene at shotSize after shotTicks ticks, without
-// showing it, and saves it as a PNG.
-func (g *game) screenshot() error {
+// showing it, and saves it as a PNG. It reports whether it is done.
+func (g *game) screenshot() (bool, error) {
 	if g.data == nil {
-		return g.dataErr
+		return false, g.dataErr
 	}
-	if err := g.newScene(g.opt.shotSize.X, g.opt.shotSize.Y); err != nil {
-		return err
+	if g.renderer == nil {
+		if err := g.newScene(g.opt.shotSize.X, g.opt.shotSize.Y); err != nil {
+			return false, err
+		}
 	}
-	for range g.opt.shotTicks {
+	for n := 0; g.ticks < g.opt.shotTicks && n < shotTicksPerFrame; n++ {
 		g.tick()
+	}
+	if g.ticks < g.opt.shotTicks {
+		return false, nil
 	}
 	img := ebiten.NewImage(g.opt.shotSize.X, g.opt.shotSize.Y)
 	g.renderer.Compose(img)
@@ -250,13 +269,13 @@ func (g *game) screenshot() error {
 
 	f, err := os.Create(g.opt.shot)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := png.Encode(f, rgba); err != nil {
 		f.Close()
-		return err
+		return false, err
 	}
-	return f.Close()
+	return true, f.Close()
 }
 
 func parseFlags() options {
@@ -274,6 +293,8 @@ func parseFlags() options {
 	flag.StringVar(&opt.ttm, "ttm", "", "play clips of one animation script over and over: NAME or NAME:TAG,TAG,...")
 	flag.StringVar(&opt.ads, "ads", "", "play one scene of a scene script over and over: NAME:SCENE")
 	flag.BoolVar(&opt.left, "left", false, "move the island to the left, as scenes such as fishing at C (MJFISHC) need")
+	flag.IntVar(&opt.day, "day", 0, "play this day of the story (1-11) instead of the saved one, without saving")
+	flag.StringVar(&opt.date, "date", "", `pretend the clock started at this time, such as "2026-12-24 15:30", without saving`)
 	flag.Parse()
 
 	switch filter {
@@ -292,12 +313,31 @@ func parseFlags() options {
 	if opt.seed == 0 {
 		opt.seed = rand.Uint64()
 	}
+	if opt.day < 0 || opt.day > story.Days {
+		log.Fatalf("bad -day %d: the story has days 1 to %d", opt.day, story.Days)
+	}
 	return opt
 }
 
 func main() {
 	opt := parseFlags()
-	g := &game{opt: opt, overlay: opt.debug}
+	g := &game{opt: opt, overlay: opt.debug, now: time.Now}
+	if opt.date != "" {
+		start, err := time.ParseInLocation("2006-01-02 15:04", opt.date, time.Local)
+		if err != nil {
+			log.Fatalf("bad -date %q: use the form 2026-12-24 15:30", opt.date)
+		}
+		real := time.Now()
+		g.now = func() time.Time { return start.Add(time.Since(real)) }
+	}
+	switch {
+	case opt.day > 0:
+		g.day = func() int { return opt.day }
+	case opt.date != "":
+		g.day = func() int { return 1 }
+	default:
+		g.day = savedDay(g.now)
+	}
 	g.data, g.dataErr = loadGameData(opt.dataDir)
 	if g.dataErr != nil {
 		log.Printf("game data: %v", g.dataErr)

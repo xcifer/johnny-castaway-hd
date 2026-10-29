@@ -146,6 +146,29 @@ var Scenes = []Scene{
 // Days is how many days the story has. After the last it starts again.
 const Days = 11
 
+// Progress is how far the story has come. It is kept between runs of the
+// screensaver: the story moves on a day on each new date it runs.
+type Progress struct {
+	Date string `json:"date"` // the last date it ran, as 2006-01-02
+	Day  int    `json:"day"`  // 1 to Days
+}
+
+// Advance moves the story on a day if the date is new, and reports whether
+// p changed.
+func (p *Progress) Advance(now time.Time) bool {
+	changed := false
+	if d := now.Format(time.DateOnly); d != p.Date {
+		p.Date = d
+		p.Day++
+		changed = true
+	}
+	if p.Day < 1 || p.Day > Days {
+		p.Day = 1
+		changed = true
+	}
+	return changed
+}
+
 // leftShift is how far LeftIsland scenes expect the island to the left.
 const leftShift = 272
 

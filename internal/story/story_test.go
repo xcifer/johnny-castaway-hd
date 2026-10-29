@@ -89,6 +89,41 @@ func TestRaftFor(t *testing.T) {
 	}
 }
 
+func TestProgress(t *testing.T) {
+	var p Progress // never run before
+	steps := []struct {
+		at      time.Time
+		day     int
+		changed bool
+	}{
+		{date(time.March, 1, 9), 1, true},
+		{date(time.March, 1, 23), 1, false},   // same date
+		{date(time.March, 2, 0), 2, true},     // next date
+		{date(time.March, 9, 12), 3, true},    // a week later: still one day on
+		{date(time.February, 1, 12), 4, true}, // the clock went back
+	}
+	for i, s := range steps {
+		if changed := p.Advance(s.at); p.Day != s.day || changed != s.changed {
+			t.Errorf("step %d: day %d changed %v, want %d %v", i, p.Day, changed, s.day, s.changed)
+		}
+	}
+	// After the last day, the story starts again.
+	p = Progress{Date: "2026-01-01", Day: Days}
+	if p.Advance(date(time.January, 2, 12)); p.Day != 1 {
+		t.Errorf("after day %d: day %d", Days, p.Day)
+	}
+	// A broken day is reset, even on the same date.
+	p = Progress{Date: "2026-01-02", Day: 40}
+	if !p.Advance(date(time.January, 2, 12)) || p.Day != 1 {
+		t.Errorf("day 40: day %d", p.Day)
+	}
+	// The same day of the year, a year later, is a new date.
+	p = Progress{Date: "2025-06-01", Day: 3}
+	if p.Advance(date(time.June, 1, 12)); p.Day != 4 {
+		t.Errorf("a year later: day %d", p.Day)
+	}
+}
+
 func TestScenes(t *testing.T) {
 	if len(Scenes) != 63 {
 		t.Errorf("%d scenes, want 63", len(Scenes))
