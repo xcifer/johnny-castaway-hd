@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"image/color"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -83,6 +84,7 @@ func TestGameDataScripts(t *testing.T) {
 		}
 		samples := 0
 		s.Sound = func(int) { samples++ }
+		s.Rand = rand.New(rand.NewPCG(1, 2))
 		s.AddScript(sc)
 
 		// Fingerprint every tenth frame and the last one.
@@ -96,13 +98,13 @@ func TestGameDataScripts(t *testing.T) {
 				}
 			}
 		}
-		ticks, frames := 0, 0
-		for ; len(s.Threads()) > 0; ticks++ {
-			if ticks == 100000 {
-				t.Fatalf("%s still playing after %d ticks", name, ticks)
+		redraws, frames := 0, 0
+		for ; len(s.Threads()) > 0; redraws++ {
+			if redraws == 100000 {
+				t.Fatalf("%s still playing after %d redraws", name, redraws)
 			}
 			s.Step()
-			if th := s.Threads(); len(th) == 1 && th[0].timer == 0 {
+			if th := s.Threads(); len(th) == 1 && !th[0].shown {
 				if frames%10 == 0 {
 					snapshot()
 				}
@@ -111,7 +113,7 @@ func TestGameDataScripts(t *testing.T) {
 			s.Play()
 		}
 		snapshot()
-		lines = append(lines, fmt.Sprintf("%s ticks %d frames %d samples %d %x", name, ticks, frames, samples, h.Sum(nil)))
+		lines = append(lines, fmt.Sprintf("%s ticks %d frames %d samples %d %x", name, redraws*FrameTicks, frames, samples, h.Sum(nil)))
 	}
 	got := strings.Join(lines, "\n") + "\n"
 
@@ -191,8 +193,8 @@ func TestGameDataClips(t *testing.T) {
 		for _, in := range sc.code {
 			switch in.Opcode {
 			case opTimer:
-				if (int(in.Args[0])+int(in.Args[1]))/2 == 0 {
-					t.Errorf("%s at %d: TIMER %v makes a zero delay", sc.Name, in.Offset, in.Args)
+				if in.Args[0] > in.Args[1] {
+					t.Errorf("%s at %d: TIMER %v has its range backwards", sc.Name, in.Offset, in.Args)
 				}
 			case opDrawCircle:
 				if in.Args[2] != in.Args[3] || in.Args[2]%2 != 0 || in.Args[2] < 2 {

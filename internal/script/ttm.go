@@ -7,6 +7,7 @@ package script
 import (
 	"fmt"
 	"log"
+	"math/rand/v2"
 
 	"github.com/xcifer/johnny-castaway-hd/internal/resource"
 )
@@ -49,8 +50,16 @@ const (
 	// MaxThreads is how many clips can play at once.
 	MaxThreads = 10
 	bmpSlots   = 6
-	// minDelay is the shortest time a frame stays on screen, in ticks.
-	minDelay = 4
+
+	// TicksPerSecond is the clock script delays count in: 1/64 s.
+	TicksPerSecond = 64
+	// FrameTicks is how often the original redraws the screen: every 4
+	// ticks (62.5 ms). A frame stays up for its delay rounded up to whole
+	// redraws, and for at least one. Measured in recordings of the
+	// original; see docs/timing.md.
+	FrameTicks = 4
+	// startDelay is the delay of a clip that doesn't set one.
+	startDelay = 4
 )
 
 // Script is a loaded TTM script: numbered clips, each running from a tag to
@@ -118,15 +127,18 @@ type Thread struct {
 	slot   int
 	layer  Layer
 
-	ip           int
-	delay, timer int // ticks per frame, ticks left of this frame (0: not started)
-	jump         int // where to continue after this frame, or -1
-	bmp          int
-	fg, bg       uint8
-	sceneTimer   int // ticks left to keep looping the clip, or 0
-	repeats      int // times left to replay the clip once it ends
-	whole        bool
-	ending       bool
+	ip         int
+	delay      int  // ticks the frame should stay up
+	timer      int  // ticks left of the frame on screen
+	age        int  // ticks the frame on screen has been up
+	shown      bool // a frame is on screen; false until the first one
+	jump       int  // where to continue after this frame, or -1
+	bmp        int
+	fg, bg     uint8
+	sceneTimer int // ticks left to keep looping the clip, or 0
+	repeats    int // times left to replay the clip once it ends
+	whole      bool
+	ending     bool
 }
 
 func (t *Thread) String() string {
@@ -136,11 +148,14 @@ func (t *Thread) String() string {
 	return fmt.Sprintf("%s:%d ip %d", t.Script.Name, t.Tag, t.ip)
 }
 
-// Scheduler runs threads in slots. Each tick, call Step and then Play.
+// Scheduler runs threads in slots. Every FrameTicks ticks, call Step and
+// then Play.
 type Scheduler struct {
 	Canvas Canvas
 	// Sound plays a sample for PLAY_SAMPLE; nil ignores them.
 	Sound func(n int)
+	// Rand picks the random delays of TIMER; nil uses the global source.
+	Rand *rand.Rand
 	// Logf reports problems in scripts, each one only once; nil uses the
 	// log package.
 	Logf func(format string, args ...any)
@@ -214,7 +229,7 @@ func (s *Scheduler) start(sc *Script, ip int) *Thread {
 		l.Clear()
 		l.ResetClip()
 		l.SetVisible(true)
-		t = &Thread{Script: sc, slot: i, layer: l, ip: ip, delay: minDelay, jump: -1, fg: 15, bg: 15}
+		t = &Thread{Script: sc, slot: i, layer: l, ip: ip, delay: startDelay, jump: -1, fg: 15, bg: 15}
 		s.threads[i] = t
 		return t
 	}
@@ -238,19 +253,21 @@ func (s *Scheduler) Threads() []*Thread {
 	return ts
 }
 
-// Step advances the clock by one tick. Threads whose frame is over move
-// on: a pending jump is taken, a timed clip runs down, and an ended clip is
-// replayed or stopped. Step returns the threads that stopped.
+// Step advances the clock by FrameTicks ticks. Threads whose frame is over
+// move on: a pending jump is taken, a timed clip runs down, and an ended
+// clip is replayed or stopped. Step returns the threads that stopped.
 func (s *Scheduler) Step() []*Thread {
 	var stopped []*Thread
 	for _, t := range s.threads {
-		if t == nil || t.timer == 0 {
+		if t == nil || !t.shown {
 			continue
 		}
-		t.timer--
+		t.timer -= FrameTicks
+		t.age += FrameTicks
 		if t.timer > 0 {
 			continue
 		}
+		t.shown = false
 		if t.whole {
 			t.jump = -1
 			t.ending = t.ip >= len(t.Script.code)
@@ -259,7 +276,7 @@ func (s *Scheduler) Step() []*Thread {
 			t.ip, t.jump = t.jump, -1
 		}
 		if t.sceneTimer > 0 {
-			t.sceneTimer -= t.delay
+			t.sceneTimer -= t.age
 			if t.sceneTimer <= 0 {
 				t.ending = true
 			}
@@ -282,9 +299,9 @@ func (s *Scheduler) Step() []*Thread {
 // each one's code up to the next UPDATE.
 func (s *Scheduler) Play() {
 	for _, t := range s.threads {
-		if t != nil && t.timer == 0 {
-			t.timer = t.delay
+		if t != nil && !t.shown {
 			s.run(t)
+			t.timer, t.age, t.shown = t.delay, 0, true
 		}
 	}
 }
@@ -303,6 +320,13 @@ func (s *Scheduler) run(t *Thread) {
 		}
 	}
 	t.ending = true
+}
+
+func (s *Scheduler) intN(n int) int {
+	if s.Rand != nil {
+		return s.Rand.IntN(n)
+	}
+	return rand.IntN(n)
 }
 
 // coord reads a coordinate argument, which may be negative.
@@ -332,13 +356,12 @@ func (s *Scheduler) exec(t *Thread, in resource.Instr) bool {
 			t.ending = true
 		}
 	case opSetDelay:
-		t.delay = max(int(a[0]), minDelay)
-		t.timer = t.delay
+		t.delay = int(a[0])
 	case opTimer:
-		// jc_reborn's guess, which it calls unsure. The data has no
-		// arguments that would make it 0.
-		t.delay = max((int(a[0])+int(a[1]))/2, 1)
-		t.timer = t.delay
+		// A random delay from a to b: the same TIMER waits differently
+		// each time in recordings of the original.
+		lo, hi := int(a[0]), max(int(a[1]), int(a[0]))
+		t.delay = lo + s.intN(hi-lo+1)
 	case opSetBmpSlot:
 		t.bmp = int(a[0])
 	case opGotoTag:

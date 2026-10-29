@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"math/rand/v2"
 	"slices"
 	"strconv"
@@ -13,8 +14,8 @@ import (
 )
 
 // loopPause is how long the empty island shows between two plays of a
-// script, in ticks.
-const loopPause = 50
+// script, in redraws (one second).
+const loopPause = 16
 
 // ttmSpec is the script and clips chosen with -ttm.
 type ttmSpec struct {
@@ -70,6 +71,7 @@ type ttmScene struct {
 	d      *gameData
 	seed   uint64
 	spec   ttmSpec
+	at     image.Point // island offset
 	sc     *script.Script
 	island *islandScene
 	sched  *script.Scheduler
@@ -77,8 +79,8 @@ type ttmScene struct {
 	plays  int
 }
 
-func newTTMScene(r *render.Renderer, d *gameData, seed uint64, spec ttmSpec) *ttmScene {
-	s := &ttmScene{r: r, d: d, seed: seed, spec: spec, sc: script.NewScript(spec.name, spec.ttm)}
+func newTTMScene(r *render.Renderer, d *gameData, seed uint64, spec ttmSpec, at image.Point) *ttmScene {
+	s := &ttmScene{r: r, d: d, seed: seed, spec: spec, at: at, sc: script.NewScript(spec.name, spec.ttm)}
 	c := newScreenCanvas(r, d)
 	c.screenLoaded = func() { s.island.still = true }
 	s.sched = script.NewScheduler(c)
@@ -89,7 +91,7 @@ func newTTMScene(r *render.Renderer, d *gameData, seed uint64, spec ttmSpec) *tt
 // start redraws the island, the same each time, and starts the clips.
 func (s *ttmScene) start() {
 	s.r.Saved.Clear()
-	s.island = newIslandScene(s.r, s.d, rand.New(rand.NewPCG(s.seed, 0)), false)
+	s.island = newIslandScene(s.r, s.d, rand.New(rand.NewPCG(s.seed, 0)), false, s.at)
 	if len(s.spec.tags) == 0 {
 		s.sched.AddScript(s.sc)
 	}
@@ -99,7 +101,7 @@ func (s *ttmScene) start() {
 	s.plays++
 }
 
-// Tick advances the scene by one 20 ms tick.
+// Tick advances the scene by one redraw.
 func (s *ttmScene) Tick() {
 	s.island.Tick()
 	s.sched.Step()

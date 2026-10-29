@@ -25,11 +25,13 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
 	"github.com/xcifer/johnny-castaway-hd/internal/render"
+	"github.com/xcifer/johnny-castaway-hd/internal/script"
 )
 
-// ticksPerSecond is the game clock: one tick is 20 ms, as in jc_reborn.
-// See docs/timing.md.
-const ticksPerSecond = 50
+// The game clock runs at 64 ticks a second, and scenes move on once per
+// redraw, every script.FrameTicks ticks, as the original does. See
+// docs/timing.md.
+const ticksPerSecond = script.TicksPerSecond
 
 type options struct {
 	dataDir   string
@@ -42,9 +44,10 @@ type options struct {
 	shotSize  image.Point
 	shotTicks int
 	ttm       string
+	left      bool // island moved left, for scripts of scenes that need it
 }
 
-// scene is what plays on the screen.
+// scene is what plays on the screen. Tick advances it by one redraw.
 type scene interface {
 	Tick()
 	Status() string
@@ -59,7 +62,7 @@ type game struct {
 	screen   image.Point // screen size in pixels, from LayoutF
 	renderer *render.Renderer
 	scene    scene
-	ticks    int // scene ticks played
+	ticks    int // clock ticks since the scene started
 	overlay  bool
 	frames   int
 	start    time.Time // first tick
@@ -78,11 +81,19 @@ func (g *game) newScene(w, h int) error {
 	case g.data == nil:
 		g.scene = nil
 	case g.ttm.ttm != nil:
-		g.scene = newTTMScene(r, g.data, g.opt.seed, g.ttm)
+		g.scene = newTTMScene(r, g.data, g.opt.seed, g.ttm, g.island())
 	default:
-		g.scene = newIslandScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), true)
+		g.scene = newIslandScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), true, g.island())
 	}
 	return nil
+}
+
+// island is where the island is drawn, relative to its usual place.
+func (g *game) island() image.Point {
+	if g.opt.left {
+		return leftIsland
+	}
+	return image.Point{}
 }
 
 func (g *game) Update() error {
@@ -120,11 +131,19 @@ func (g *game) Update() error {
 			return err
 		}
 	}
-	if g.scene != nil {
-		g.scene.Tick()
-		g.ticks++
-	}
+	g.tick()
 	return nil
+}
+
+// tick advances the clock, and the scene on every redraw.
+func (g *game) tick() {
+	if g.scene == nil {
+		return
+	}
+	if g.ticks%script.FrameTicks == 0 {
+		g.scene.Tick()
+	}
+	g.ticks++
 }
 
 func (g *game) quitRequested() bool {
@@ -163,6 +182,9 @@ func (g *game) status() string {
 	ttm, status := "none", ""
 	if g.ttm.ttm != nil {
 		ttm = g.opt.ttm
+	}
+	if g.opt.left {
+		ttm += "  island left"
 	}
 	if g.scene != nil {
 		status = g.scene.Status()
@@ -211,8 +233,7 @@ func (g *game) screenshot() error {
 		return err
 	}
 	for range g.opt.shotTicks {
-		g.scene.Tick()
-		g.ticks++
+		g.tick()
 	}
 	img := ebiten.NewImage(g.opt.shotSize.X, g.opt.shotSize.Y)
 	g.renderer.Compose(img)
@@ -246,6 +267,7 @@ func parseFlags() options {
 	flag.StringVar(&shotSize, "shotsize", "1920x1080", "screen size for -shot")
 	flag.IntVar(&opt.shotTicks, "shotticks", 0, "ticks to run before -shot")
 	flag.StringVar(&opt.ttm, "ttm", "", "play clips of one animation script over and over: NAME or NAME:TAG,TAG,...")
+	flag.BoolVar(&opt.left, "left", false, "move the island to the left, as scenes such as fishing at C (MJFISHC) need")
 	flag.Parse()
 
 	switch filter {

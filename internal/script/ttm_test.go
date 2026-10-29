@@ -3,6 +3,7 @@ package script
 import (
 	"fmt"
 	"image/color"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"testing"
@@ -35,14 +36,14 @@ func testPalette() color.Palette {
 	return pal
 }
 
-// harness runs a scheduler on a Paletted canvas and records, per tick,
-// the samples played (PLAY_SAMPLE marks frames in test scripts) and the
-// threads that stopped.
+// harness runs a scheduler on a Paletted canvas and records, per redraw
+// (FrameTicks ticks), the samples played (PLAY_SAMPLE marks frames in test
+// scripts) and the threads that stopped.
 type harness struct {
 	t       *testing.T
 	s       *Scheduler
 	p       *Paletted
-	tick    int
+	redraw  int
 	samples []string
 	stopped []string
 	logs    []string
@@ -51,21 +52,21 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	h := &harness{t: t, p: NewPaletted(nil, testPalette())}
 	h.s = NewScheduler(h.p)
-	h.s.Sound = func(n int) { h.samples = append(h.samples, fmt.Sprintf("%d@%d", n, h.tick)) }
+	h.s.Sound = func(n int) { h.samples = append(h.samples, fmt.Sprintf("%d@%d", n, h.redraw)) }
 	h.s.Logf = func(format string, args ...any) { h.logs = append(h.logs, fmt.Sprintf(format, args...)) }
 	return h
 }
 
-// run plays ticks, starting with tick 0 for threads already added.
-func (h *harness) run(ticks int) {
-	for range ticks {
-		if h.tick > 0 {
+// run plays redraws, starting with redraw 0 for threads already added.
+func (h *harness) run(redraws int) {
+	for range redraws {
+		if h.redraw > 0 {
 			for _, t := range h.s.Step() {
-				h.stopped = append(h.stopped, fmt.Sprintf("%d@%d", t.Tag, h.tick))
+				h.stopped = append(h.stopped, fmt.Sprintf("%d@%d", t.Tag, h.redraw))
 			}
 		}
 		h.s.Play()
-		h.tick++
+		h.redraw++
 	}
 }
 
@@ -90,32 +91,61 @@ func TestFrameTiming(t *testing.T) {
 	h := newHarness(t)
 	h.s.Add(sc, 1, 0)
 	h.run(30)
-	// The last frame stays up for its delay after PURGE, then the clip stops.
-	h.want("samples", h.samples, "1@0", "2@6")
-	h.want("stopped", h.stopped, "1@18")
+	// 6 ticks round up to two redraws. The last frame stays up for its
+	// delay after PURGE, then the clip stops.
+	h.want("samples", h.samples, "1@0", "2@2")
+	h.want("stopped", h.stopped, "1@6")
 	if len(h.s.Threads()) != 0 || !h.p.layers[0].hidden {
 		t.Error("stopped thread still there or its layer still visible")
 	}
 }
 
-func TestMinimumDelay(t *testing.T) {
+// A frame stays up for its delay rounded up to whole redraws, and for at
+// least one.
+func TestDelayRounding(t *testing.T) {
+	code := []resource.Instr{ins(opTag, 1)}
+	for i, d := range []uint16{0, 1, 4, 5, 8, 9, 16, 17} {
+		code = append(code, ins(opSetDelay, d), ins(opPlaySample, uint16(i)), ins(opUpdate))
+	}
+	h := newHarness(t)
+	h.s.Add(newTestScript(code...), 1, 0)
+	h.run(30)
+	// Redraws per frame: 1 1 1 2 2 3 4 5.
+	h.want("samples", h.samples, "0@0", "1@1", "2@2", "3@3", "4@5", "5@7", "6@10", "7@14")
+	// The code ends right after the last UPDATE: that frame is the last.
+	h.want("stopped", h.stopped, "1@19")
+}
+
+// TIMER waits a random number of ticks from its first argument to its
+// second, both included.
+func TestTimer(t *testing.T) {
 	sc := newTestScript(
 		ins(opTag, 1),
-		ins(opSetDelay, 0),
+		ins(opTimer, 5, 12),
 		ins(opPlaySample, 1),
 		ins(opUpdate),
-		ins(opTimer, 3, 10), // (3+10)/2 = 6
-		ins(opPlaySample, 2),
-		ins(opUpdate),
-		ins(opPlaySample, 3),
+		ins(opPurge),
+		ins(opSetDelay, 0),
 		ins(opUpdate),
 	)
 	h := newHarness(t)
-	h.s.Add(sc, 1, 0)
-	h.run(30)
-	h.want("samples", h.samples, "1@0", "2@4", "3@10")
-	// The code ends right after the last UPDATE: that frame is the last.
-	h.want("stopped", h.stopped, "1@16")
+	h.s.Rand = rand.New(rand.NewPCG(1, 2))
+	seen := map[int]bool{}
+	h.s.Sound = func(int) {
+		d := h.s.Threads()[0].delay
+		if d < 5 || d > 12 {
+			t.Errorf("TIMER 5 12 gave %d", d)
+		}
+		seen[d] = true
+	}
+	h.s.Add(sc, 1, 400)
+	h.run(2000)
+	if len(seen) != 8 {
+		t.Errorf("TIMER 5 12 gave %d different delays, want all 8", len(seen))
+	}
+	if len(h.s.Threads()) != 0 {
+		t.Error("clip still playing")
+	}
 }
 
 func TestGotoTag(t *testing.T) {
@@ -137,8 +167,8 @@ func TestGotoTag(t *testing.T) {
 	h := newHarness(t)
 	h.s.Add(sc, 1, 0)
 	h.run(20)
-	h.want("samples", h.samples, "1@0", "2@0", "4@4")
-	h.want("stopped", h.stopped, "1@12")
+	h.want("samples", h.samples, "1@0", "2@0", "4@1")
+	h.want("stopped", h.stopped, "1@3")
 }
 
 func TestRepeats(t *testing.T) {
@@ -152,12 +182,12 @@ func TestRepeats(t *testing.T) {
 	h := newHarness(t)
 	h.s.Add(sc, 1, 3)
 	h.run(40)
-	h.want("samples", h.samples, "1@0", "1@8", "1@16")
-	h.want("stopped", h.stopped, "1@24")
+	h.want("samples", h.samples, "1@0", "1@2", "1@4")
+	h.want("stopped", h.stopped, "1@6")
 }
 
-// A negative count loops the clip for that many ticks: PURGE jumps back to
-// the start of the clip instead of ending it.
+// A negative count loops the clip for that many ticks of frames shown:
+// PURGE jumps back to the start of the clip instead of ending it.
 func TestSceneTimer(t *testing.T) {
 	sc := newTestScript(
 		ins(opTag, 1),
@@ -172,8 +202,28 @@ func TestSceneTimer(t *testing.T) {
 	h := newHarness(t)
 	h.s.Add(sc, 1, -20)
 	h.run(40)
-	h.want("samples", h.samples, "1@0", "1@8", "1@16")
-	h.want("stopped", h.stopped, "1@20")
+	h.want("samples", h.samples, "1@0", "1@2", "1@4")
+	h.want("stopped", h.stopped, "1@5")
+}
+
+// The loop time runs down by how long frames were shown, not by the delays
+// asked for: a 1-tick delay still shows its frame for a whole redraw.
+func TestSceneTimerCountsShownTime(t *testing.T) {
+	sc := newTestScript(
+		ins(opTag, 1),
+		ins(opSetDelay, 1),
+		ins(opPlaySample, 1),
+		ins(opUpdate),
+		ins(opPurge),
+		ins(opUpdate),
+		ins(opTag, 2), // running off the end would stop the clip
+		ins(opUpdate),
+	)
+	h := newHarness(t)
+	h.s.Add(sc, 1, -12)
+	h.run(40)
+	h.want("samples", h.samples, "1@0", "1@2")
+	h.want("stopped", h.stopped, "1@3")
 }
 
 // A timed clip that isn't the first in its script loops back to its own
@@ -194,8 +244,8 @@ func TestSceneTimerLaterClip(t *testing.T) {
 	h := newHarness(t)
 	h.s.Add(sc, 2, -12)
 	h.run(30)
-	h.want("samples", h.samples, "2@0", "2@8")
-	h.want("stopped", h.stopped, "2@12")
+	h.want("samples", h.samples, "2@0", "2@2")
+	h.want("stopped", h.stopped, "2@3")
 }
 
 func TestAddScript(t *testing.T) {
@@ -214,8 +264,8 @@ func TestAddScript(t *testing.T) {
 	h := newHarness(t)
 	h.s.AddScript(sc)
 	h.run(30)
-	h.want("samples", h.samples, "1@0", "2@4", "3@8")
-	h.want("stopped", h.stopped, "0@12")
+	h.want("samples", h.samples, "1@0", "2@1", "3@2")
+	h.want("stopped", h.stopped, "0@3")
 }
 
 func TestAddTwice(t *testing.T) {
@@ -230,7 +280,7 @@ func TestAddTwice(t *testing.T) {
 	if h.s.Add(sc, 2, 0) == nil {
 		t.Error("other clip of the same script refused")
 	}
-	h.run(5) // clip 1 has reached PURGE and is ending
+	h.run(2) // clip 1 has reached PURGE and is ending
 	if h.s.Add(sc, 1, 0) == nil {
 		t.Error("ending clip can't be started again")
 	}

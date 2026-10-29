@@ -6,19 +6,23 @@ count weight`, often several at once: one clip loads the pictures and ends strai
 another draws with them. Bitmap slots belong to the script, so all its clips share them.
 
 The interpreter is `internal/script`. Its behavior follows jc_reborn (`ttm.c`, `graphics.c`, the
-thread loop in `ads.c`). Where jc_reborn guesses, so do we, and it says so below.
+thread loop in `ads.c`), except for timing, which was measured in recordings of the original
+([timing.md](timing.md)). Where jc_reborn guesses, so do we, and it says so below.
 
 ## Threads and timing
 
 - Each playing clip is a thread with its own transparent layer, in one of 10 slots. A new
   thread takes the lowest free slot, and higher slots are drawn on top. A new thread starts
   with an empty layer, no clip zone, bitmap slot 0, colors 15/15 and a delay of 4 ticks.
-- A thread runs its code up to `UPDATE`; that frame then stays on screen for the thread's delay.
+- Delays count in ticks of 1/64 s, and the screen is redrawn every 4 ticks (62.5 ms). A thread
+  runs its code up to `UPDATE`; that frame then stays on screen for the thread's delay rounded
+  up to whole redraws, and for at least one.
 - `GOTO_TAG` takes effect after the current frame, not at once.
 - When a clip ends (at `PURGE` or the end of the code), its last frame stays up for one more
   delay, then the thread stops and its layer disappears.
-- `ADD_SCENE` count: *n* > 0 plays the clip *n* times; *n* < 0 loops it for −*n* ticks, with
-  `PURGE` jumping back to the clip's start; 0 plays it once. A clip that is already playing
+- `ADD_SCENE` count: *n* > 0 plays the clip *n* times; *n* < 0 loops it for −*n* ticks of
+  frames shown (a guess: jc_reborn counts the delays asked for), with `PURGE` jumping back to
+  the clip's start; 0 plays it once. A clip that is already playing
   isn't started again.
 
 The tests check each of these rules (`internal/script/ttm_test.go`).
@@ -35,7 +39,7 @@ effect is known. **guess**: implemented, but how the original behaves is uncerta
 | 0x0080 | DRAW_BACKGROUND | 190 | ignored | Appears where clips free their pictures (e.g. GFFFOOD.TTM tag 11). |
 | 0x0110 | PURGE | 528 | done | Ends the clip; in a timed loop, jumps back to the clip's start. |
 | 0x0FF0 | UPDATE | 6631 | done | Ends the frame. |
-| 0x1021 | SET_DELAY *n* | 1148 | guess | Frame time *n* ticks, at least 4. The minimum comes from jc_reborn; 93 uses ask for 0. |
+| 0x1021 | SET_DELAY *n* | 1148 | done | Frame time *n* ticks, rounded up to whole redraws. Measured: no minimum (jc_reborn's 4 doesn't fit the recordings); 0 lasts one redraw. |
 | 0x1051 | SET_BMP_SLOT *n* | 456 | done | Selects bitmap slot *n* (0–5) for `LOAD_IMAGE`. |
 | 0x1061 | SET_PALETTE_SLOT | 41 | ignored | The game has one palette. |
 | 0x1101 | LOCAL_TAG *n* | 5 | done | A jump target, like `TAG`. |
@@ -44,7 +48,7 @@ effect is known. **guess**: implemented, but how the original behaves is uncerta
 | 0x1201 | GOTO_TAG *n* | 75 | done | Continues at tag *n* after this frame. |
 | 0x2002 | SET_COLORS *fg bg* | 217 | done | Colors for lines, pixels, rectangles and circles. Color 0 is transparent and erases. SASKDATE.TTM uses 207 once; we use its low 4 bits (15), a guess. |
 | 0x2012 | SET_FRAME1 | 52 | ignored | Always `0 0`, next to `LOAD_IMAGE`. |
-| 0x2022 | TIMER *a b* | 152 | guess | Frame time (*a*+*b*)/2 ticks. jc_reborn's formula, which it calls unsure. |
+| 0x2022 | TIMER *a b* | 152 | done | Frame time a random number of ticks from *a* to *b*, measured (jc_reborn uses the average). Like `SET_DELAY` it stays for later frames until changed; six frames in the data rely on that, which is a guess. |
 | 0x4004 | SET_CLIP_ZONE *x1 y1 x2 y2* | 52 | done | Limits drawing on the layer (*x2*, *y2* exclusive). In widescreen, a zone touching the edge of the 640×480 area reaches the edge of the frame. |
 | 0x4204 | COPY_ZONE_TO_BG *x y w h* | 38 | done | Copies the layer's pixels into the saved zones, which stay when the layer is cleared. Copies *w*+2 columns, as jc_reborn does: GJVIS6.TTM's ship hull has a 2-pixel gap otherwise. |
 | 0x4214 | SAVE_IMAGE1 | 60 | ignored | jc_reborn ignores it too. |
@@ -87,3 +91,7 @@ plays clips 1 and 18 of MJFISH.TTM together over the island, then again after a 
 Include the clip that loads the pictures (usually 1), as the scene scripts do. `-ttm MJFISH`
 plays the whole script in file order, which can draw a clip before the pictures it expects are
 loaded. F1 shows which clips are playing.
+
+Some scenes move the island 272 pixels to the left, and their scripts are drawn for that place;
+add `-left` for those, e.g. `jchd -windowed -debug -left -ttm MJFISHC:43,17` (fishing at C).
+Otherwise Johnny and his own palm trunk appear in the sea beside the island.

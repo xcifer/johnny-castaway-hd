@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"math/rand/v2"
 	"os"
@@ -81,13 +82,18 @@ func loadGameData(dir string) (*gameData, error) {
 	return d, nil
 }
 
-// Timing in ticks of 20 ms, from jc_reborn: shore waves advance every 8
-// ticks, a walking step takes 6, and Johnny pauses 80 after arriving.
+// Timing in redraws of 62.5 ms. Shore waves: jc_reborn's 8 ticks, not yet
+// checked against the original. Walking: one step per redraw and a pause of
+// about 13 after arriving, measured in recordings (docs/timing.md).
 const (
-	waveDelay   = 8
-	walkDelay   = 6
-	arriveDelay = 80
+	waveDelay   = 2
+	walkDelay   = 1
+	arriveDelay = 13
 )
+
+// leftIsland is where some scenes move the island (jc_reborn's story.c):
+// 272 pixels to the left. Their scripts are drawn for that position.
+var leftIsland = image.Pt(-272, 0)
 
 // islandScene shows the island at high tide with waves and, if walking,
 // Johnny walking every path of the walk table in turn. Layout follows
@@ -95,6 +101,7 @@ const (
 // are implemented.
 type islandScene struct {
 	r       *render.Renderer
+	at      image.Point // offset of the island from its usual place
 	bg      []*render.Sprite
 	walk    []*render.Sprite
 	paths   [][]resource.WalkStep
@@ -107,8 +114,8 @@ type islandScene struct {
 	tick                int
 }
 
-func newIslandScene(r *render.Renderer, d *gameData, rng *rand.Rand, walking bool) *islandScene {
-	s := &islandScene{r: r, paths: d.walkPaths}
+func newIslandScene(r *render.Renderer, d *gameData, rng *rand.Rand, walking bool, at image.Point) *islandScene {
+	s := &islandScene{r: r, at: at, paths: d.walkPaths}
 	for i := range d.background.Frames {
 		s.bg = append(s.bg, render.NewSprite(&d.background.Frames[i], d.palette, true))
 	}
@@ -128,10 +135,11 @@ func newIslandScene(r *render.Renderer, d *gameData, rng *rand.Rand, walking boo
 		r.DrawSprite(bgl, s.bg[15+n], rng.IntN(640-size[0]), rng.IntN(135-size[1]), flip)
 	}
 
-	r.DrawSprite(bgl, s.bg[0], 288, 279, false)  // island
-	r.DrawSprite(bgl, s.bg[13], 442, 148, false) // trunk
-	r.DrawSprite(bgl, s.bg[12], 365, 122, false) // leaves
-	r.DrawSprite(bgl, s.bg[14], 396, 279, false) // palm shadow
+	// The clouds stay where they are; the rest moves with the island.
+	s.draw(bgl, 0, 288, 279)  // island
+	s.draw(bgl, 13, 442, 148) // trunk
+	s.draw(bgl, 12, 365, 122) // leaves
+	s.draw(bgl, 14, 396, 279) // palm shadow
 	for range 4 {
 		s.animateWaves()
 	}
@@ -143,11 +151,16 @@ func newIslandScene(r *render.Renderer, d *gameData, rng *rand.Rand, walking boo
 	return s
 }
 
+// draw draws background sprite n at x, y on the island.
+func (s *islandScene) draw(l *render.Layer, n, x, y int) {
+	s.r.DrawSprite(l, s.bg[n], x+s.at.X, y+s.at.Y, false)
+}
+
 // animateWaves redraws one of the three high-tide shore waves.
 func (s *islandScene) animateWaves() {
 	s.waveSlot = (s.waveSlot + 1) % 3
 	pos := [3][2]int{{270, 306}, {364, 319}, {518, 303}}[s.waveSlot]
-	s.r.DrawSprite(s.r.Background, s.bg[3+3*s.waveSlot+s.waveFrame], pos[0], pos[1], false)
+	s.draw(s.r.Background, 3+3*s.waveSlot+s.waveFrame, pos[0], pos[1])
 	if s.waveSlot == 0 {
 		s.waveFrame = (s.waveFrame + 1) % 3
 	}
@@ -156,10 +169,10 @@ func (s *islandScene) animateWaves() {
 func (s *islandScene) drawWalker() {
 	st := s.paths[s.path][s.step]
 	s.walkers.Clear()
-	s.r.DrawSprite(s.walkers, s.walk[st.Sprite], st.X-1, st.Y, st.Flip)
+	s.r.DrawSprite(s.walkers, s.walk[st.Sprite], st.X-1+s.at.X, st.Y+s.at.Y, st.Flip)
 }
 
-// Tick advances the scene by one 20 ms tick.
+// Tick advances the scene by one redraw.
 func (s *islandScene) Tick() {
 	s.tick++
 	if s.tick >= s.nextWave && !s.still {

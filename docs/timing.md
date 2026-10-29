@@ -1,51 +1,91 @@
 # Timing
 
-## Tick rate
+## The clock
 
-The game clock runs at **50 ticks per second (one tick = 20 ms)**. This follows jc_reborn
-(`events.c`: `eventsWaitTick` multiplies delays by 20 ms). Script delays are counted in ticks:
+Script delays count in **ticks of 1/64 s (15.625 ms)**, and the screen is **redrawn every 4
+ticks (62.5 ms, 16 times a second)**. A frame stays on screen for its delay rounded up to whole
+redraws, and for at least one redraw:
 
-| Source | Value |
+| Delay asked for (ticks) | On screen |
 |---|---|
-| TTM `SET_DELAY n` | wait *n* ticks between frames; jc_reborn raises values below 4 to 4 (80 ms) |
-| TTM `TIMER a b` | jc_reborn uses (a + b) / 2 ticks |
-| Shore waves (island background) | every 8 ticks |
-| Johnny walking | one step every 6 ticks; 80 ticks after arriving |
+| 0–4 | 62.5 ms |
+| 5–8 | 125 ms |
+| 9–12 | 187.5 ms |
+| 13–16 | 250 ms |
+| *n* | ⌈*n* / 4⌉ × 62.5 ms, at least 62.5 ms |
 
-To be confirmed against recordings of the original once they exist.
+`TIMER a b` waits a random number of ticks from *a* to *b*. There is no minimum delay: a delay
+of 0 shows the frame for one redraw.
 
-## Implementation
+Both clocks are in `internal/script` (`TicksPerSecond`, `FrameTicks`). `cmd/jchd` runs
+Ebitengine at 64 ticks a second and moves the scene on every fourth tick. Drawing happens at the
+display's refresh rate and always shows the latest state.
 
-`cmd/jchd` sets Ebitengine's update rate to 50 per second, and each `Update` call is one game
-tick. Ebitengine keeps the average rate and catches up after a stall, so game time doesn't drift
-with the display's refresh rate. Drawing happens at the display's refresh rate and always shows the
-latest game state.
+| Other timing | Value | Source |
+|---|---|---|
+| Johnny walking between spots | one step per redraw | measured |
+| Pause after arriving | about 13 redraws (0.8 s) | measured, includes starting the next scene |
+| Shore waves | every 2 redraws | jc_reborn's 8 ticks, not yet checked |
 
-## Measured
+## How it was measured
+
+Two recordings of the original `SCRANTIC.SCR` running under winevdm on Windows 11 (1920×1080,
+59.94 fps, game window at 75%, 60 s and 6.5 min) were analyzed frame by frame:
+
+1. Every captured frame was compared with the one before it; each change and where it happened
+   was logged.
+2. Clips were identified by drawing them with this engine and matching every captured frame
+   against the drawn frames (the island offset was found by the same matching). That gives the
+   time each clip frame appeared in the original.
+
+Findings:
+
+- **Every change in both recordings falls on a 62.5 ms grid.** Gaps between changes cluster at
+  62.5, 125, 187.5, 250 and 312.5 ms, with almost nothing in between.
+- Frames with the same delay take the same time, and the times fit the rule above:
+
+| Clip | Delay | Rule | Measured |
+|---|---|---|---|
+| MJSAND.TTM plane circling (10-frame loop, 6 loops) | 3 | 62.5 ms | 62.85 ms |
+| MJFISHC.TTM tag 17, walk with the pole (2 recordings) | 7 | 125 ms | 124.6, 125.1 ms |
+| MJFISHC.TTM tag 63, carrying the fish (18 frames) | 7 | 125 ms | 128.8 ms |
+| MJFISHC.TTM tag 2, casting (2 recordings) | 8 | 125 ms | 140, 143 ms |
+| MJFISHC.TTM tag 6, reeling in | 10 | 187.5 ms | 183, 184, 200 ms |
+| MJFISHC.TTM tag 8, slow reeling (3 recordings) | 16 | 250 ms | 267, 269, 277 ms |
+
+  Delays that are a multiple of 4 (8, 16) sometimes take one redraw more in the recordings:
+  their time lands exactly on a redraw, and the Windows timer jitters around it. The engine
+  takes the shorter time.
+
+- **`TIMER` is random.** The same `TIMER 120 240` (holding the cast line) waited 2.67, 2.97 and
+  3.37 s in three casts, all inside 120–240 ticks (1.9–3.75 s). `TIMER 60 120` waited 1.49 s
+  (60–120 ticks: 0.94–1.88 s).
+- **No 4-tick minimum.** jc_reborn raises delays below 4 to 4 ticks of 20 ms (80 ms); the plane
+  loop at delay 3 runs at 62.5 ms per frame. No run of one-frame (17 ms) changes appears
+  anywhere, which fits a delay of 0 lasting one redraw.
+- **Walking.** Steps of the walk table (about 6.5 pixels each) come every 62.5 ms, sometimes
+  125 ms; jc_reborn uses 6 ticks of 20 ms (120 ms).
+
+The rule matches the 1/64 s clock of modern Windows: the original most likely asks for a timer
+of about 55 ms, which Windows rounds up to 62.5 ms. On Windows 3.1 the timer ran in 55 ms steps,
+so the original then redrew about 18 times a second; that can't be measured without period
+hardware. This engine follows the recordings.
+
+Earlier versions used jc_reborn's clock (50 ticks a second, delays of at least 4); scripts now
+run about 15% faster, as in the recordings.
+
+## Measured on this engine
 
 `jchd -frames N` logs the measured rate on exit (time from the first tick to the last).
 
 | Run | Ticks | Time | Rate |
 |---|---|---|---|
-| Windowed, 1280×720 | 500 | 9.89 s | 50.47/s |
-| Fullscreen | 500 | 9.90 s | 50.39/s |
-| Windowed, 1280×720 | 1500 | 29.88 s | 50.16/s |
+| Windowed, 1280×720 | 640 | 9.92 s | 64.43/s |
+| Windowed, 1280×720, `-ttm MJFISHC:43,17` | 1920 | 29.91 s | 64.17/s |
+| Fullscreen | 640 | 9.92 s | 64.40/s |
 
-Both windowed runs finish about 0.1 s early: Ebitengine runs a few ticks back to back right after
-startup. The steady rate is the difference between the runs: 1000 ticks in 19.99 s = 50.03/s.
+Runs finish a little early: Ebitengine runs a few ticks back to back right after startup. The
+steady rate is the difference between the windowed runs: 1280 ticks in 19.99 s = 64.03/s.
 
-## The original, measured
-
-A 60-second recording of the original `SCRANTIC.SCR` running under winevdm on Windows 11
-(recorded at 1920×1080, 59.94 fps) was analyzed frame by frame. A patch of empty sky was used as a
-control and never changed, so every detected change is real animation.
-
-| Observation | Measured | Meaning |
-|---|---|---|
-| Walking steps | gaps alternate 117 / 133 ms, average **125.0 ms** | 6 ticks × 20 ms = 120 ms, rounded up to the next step of the Windows timer (15.625 ms): 125 ms |
-| Other gaps | ~187, 250, ~281 ms | 180, 240, 280 ms rounded up the same way |
-| Shore waves | **not animated continuously**: nothing changed for 2.5 s at 6.4–8.9 s | jc_reborn animates them every 8 ticks; to be checked when the scene scripts are implemented |
-
-The original asks for delays in 20 ms steps, as jc_reborn assumes; the system timer stretches each
-wait slightly. On 1992 hardware the Windows timer ran in 55 ms steps, which would have made waits
-longer still; that can't be measured without period hardware or an accurate emulator.
+Rendering `-ttm MJFISHC:43,17` one tick at a time with `-shot` shows the picture changing every
+8 ticks (125 ms) and never in between.
