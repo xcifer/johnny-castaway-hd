@@ -1,7 +1,7 @@
 // Command jchd is the Johnny Castaway HD screensaver.
 //
 // For now it shows the island with Johnny walking, or with -ttm plays clips
-// of one animation script. Normally any key or mouse click exits. With
+// of one animation script, or with -ads one scene of a scene script. Normally any key or mouse click exits. With
 // -debug, keys control the display instead (F1 overlay, F2 scaling filter)
 // and Esc exits.
 package main
@@ -44,6 +44,7 @@ type options struct {
 	shotSize  image.Point
 	shotTicks int
 	ttm       string
+	ads       string
 	left      bool // island moved left, for scripts of scenes that need it
 }
 
@@ -57,7 +58,8 @@ type game struct {
 	opt     options
 	data    *gameData
 	dataErr error
-	ttm     ttmSpec
+	ttm     *ttmSpec
+	ads     *adsSpec
 
 	screen   image.Point // screen size in pixels, from LayoutF
 	renderer *render.Renderer
@@ -80,8 +82,8 @@ func (g *game) newScene(w, h int) error {
 	switch {
 	case g.data == nil:
 		g.scene = nil
-	case g.ttm.ttm != nil:
-		g.scene = newTTMScene(r, g.data, g.opt.seed, g.ttm, g.island())
+	case g.ttm != nil || g.ads != nil:
+		g.scene = newScriptScene(r, g.data, g.opt.seed, g.ttm, g.ads, g.island())
 	default:
 		g.scene = newIslandScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), true, g.island())
 	}
@@ -179,8 +181,11 @@ func (g *game) Draw(screen *ebiten.Image) {
 func (g *game) status() string {
 	f := g.renderer.Frame
 	w, h := f.Size()
-	ttm, status := "none", ""
-	if g.ttm.ttm != nil {
+	ads, ttm, status := "none", "none", ""
+	if g.ads != nil {
+		ads = g.opt.ads
+	}
+	if g.ttm != nil {
 		ttm = g.opt.ttm
 	}
 	if g.opt.left {
@@ -189,9 +194,9 @@ func (g *game) status() string {
 	if g.scene != nil {
 		status = g.scene.Status()
 	}
-	return fmt.Sprintf("FPS %.1f  TPS %.1f  tick %d (%.1f s)\nscreen %dx%d  frame %dx%d  scale %.3g\nfilter %s (F2)\nADS: none  TTM: %s  %s",
+	return fmt.Sprintf("FPS %.1f  TPS %.1f  tick %d (%.1f s)\nscreen %dx%d  frame %dx%d  scale %.3g\nfilter %s (F2)\nADS: %s  TTM: %s  %s",
 		ebiten.ActualFPS(), ebiten.ActualTPS(), g.ticks, float64(g.ticks)/ticksPerSecond,
-		f.Screen.X, f.Screen.Y, w, h, f.Scale, g.renderer.Filter, ttm, status)
+		f.Screen.X, f.Screen.Y, w, h, f.Scale, g.renderer.Filter, ads, ttm, status)
 }
 
 // drawText prints text at the top left, scaled up to stay readable.
@@ -267,6 +272,7 @@ func parseFlags() options {
 	flag.StringVar(&shotSize, "shotsize", "1920x1080", "screen size for -shot")
 	flag.IntVar(&opt.shotTicks, "shotticks", 0, "ticks to run before -shot")
 	flag.StringVar(&opt.ttm, "ttm", "", "play clips of one animation script over and over: NAME or NAME:TAG,TAG,...")
+	flag.StringVar(&opt.ads, "ads", "", "play one scene of a scene script over and over: NAME:SCENE")
 	flag.BoolVar(&opt.left, "left", false, "move the island to the left, as scenes such as fishing at C (MJFISHC) need")
 	flag.Parse()
 
@@ -296,11 +302,22 @@ func main() {
 	if g.dataErr != nil {
 		log.Printf("game data: %v", g.dataErr)
 	}
+	if opt.ttm != "" && opt.ads != "" {
+		log.Fatal("-ttm and -ads can't be used together")
+	}
 	if opt.ttm != "" && g.data != nil {
-		var err error
-		if g.ttm, err = parseTTMSpec(g.data, opt.ttm); err != nil {
+		spec, err := parseTTMSpec(g.data, opt.ttm)
+		if err != nil {
 			log.Fatal(err)
 		}
+		g.ttm = &spec
+	}
+	if opt.ads != "" && g.data != nil {
+		spec, err := parseADSSpec(g.data, opt.ads)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.ads = &spec
 	}
 
 	ebiten.SetTPS(ticksPerSecond)

@@ -24,23 +24,44 @@ type ttmSpec struct {
 	tags []uint16 // none: the whole script
 }
 
+// adsSpec is the scene chosen with -ads.
+type adsSpec struct {
+	name string
+	ads  *resource.ADS
+	tag  uint16
+}
+
+// scriptNames lists the resources of one type, without the extension.
+func scriptNames(d *gameData, typ string) string {
+	var names []string
+	for i := range d.archive.Entries {
+		if e := &d.archive.Entries[i]; e.Type() == typ {
+			names = append(names, strings.TrimSuffix(e.Name, "."+typ))
+		}
+	}
+	slices.Sort(names)
+	return strings.Join(names, " ")
+}
+
+// findScript finds NAME or NAME.TYP in the archive.
+func findScript(d *gameData, name, typ string) (*resource.Entry, string, error) {
+	name = strings.ToUpper(name)
+	if !strings.HasSuffix(name, "."+typ) {
+		name += "." + typ
+	}
+	e := d.archive.Find(name)
+	if e == nil || e.Type() != typ {
+		return nil, "", fmt.Errorf("no script %s; there are %s", name, scriptNames(d, typ))
+	}
+	return e, name, nil
+}
+
 // parseTTMSpec reads NAME or NAME:TAG,TAG,... such as "MJFISH:1,18".
 func parseTTMSpec(d *gameData, arg string) (ttmSpec, error) {
 	name, list, hasTags := strings.Cut(arg, ":")
-	name = strings.ToUpper(name)
-	if !strings.HasSuffix(name, ".TTM") {
-		name += ".TTM"
-	}
-	e := d.archive.Find(name)
-	if e == nil || e.Type() != "TTM" {
-		var names []string
-		for i := range d.archive.Entries {
-			if e := &d.archive.Entries[i]; e.Type() == "TTM" {
-				names = append(names, strings.TrimSuffix(e.Name, ".TTM"))
-			}
-		}
-		slices.Sort(names)
-		return ttmSpec{}, fmt.Errorf("no script %s; there are %s", name, strings.Join(names, " "))
+	e, name, err := findScript(d, name, "TTM")
+	if err != nil {
+		return ttmSpec{}, err
 	}
 	ttm, err := resource.DecodeTTM(e)
 	if err != nil {
@@ -61,50 +82,99 @@ func parseTTMSpec(d *gameData, arg string) (ttmSpec, error) {
 	return spec, nil
 }
 
-// ttmScene plays clips of one script over the island, all starting
-// together, then again after a pause, for checking them against the
-// original. The clips that load pictures must be among them, as in the
-// scene scripts: MJFISH:1,18 rather than MJFISH:18. Without tags it plays
-// the whole script.
-type ttmScene struct {
+// parseADSSpec reads NAME:SCENE, such as "FISHING:8".
+func parseADSSpec(d *gameData, arg string) (adsSpec, error) {
+	name, tag, _ := strings.Cut(arg, ":")
+	e, name, err := findScript(d, name, "ADS")
+	if err != nil {
+		return adsSpec{}, err
+	}
+	ads, err := resource.DecodeADS(e)
+	if err != nil {
+		return adsSpec{}, err
+	}
+	var scenes []string
+	for _, t := range ads.Tags {
+		scenes = append(scenes, fmt.Sprintf("%d %s", t.ID, strings.TrimSpace(t.Name)))
+		if strconv.Itoa(int(t.ID)) == strings.TrimSpace(tag) {
+			return adsSpec{name: name, ads: ads, tag: t.ID}, nil
+		}
+	}
+	return adsSpec{}, fmt.Errorf("%s has no scene %q; its scenes are:\n  %s", name, tag, strings.Join(scenes, "\n  "))
+}
+
+// scriptScene plays clips of one script (-ttm) or one scene of a scene
+// script (-ads) over the island, then again after a pause, for checking
+// them against the original. With -ttm, the clips that load pictures must
+// be among the tags, as in the scene scripts: MJFISH:1,18 rather than
+// MJFISH:18. Without tags it plays the whole script.
+type scriptScene struct {
 	r      *render.Renderer
 	d      *gameData
 	seed   uint64
-	spec   ttmSpec
 	at     image.Point // island offset
+	ttm    *ttmSpec
+	ads    *adsSpec
 	sc     *script.Script
 	island *islandScene
 	sched  *script.Scheduler
+	scene  *script.Scene
 	pause  int
 	plays  int
 }
 
-func newTTMScene(r *render.Renderer, d *gameData, seed uint64, spec ttmSpec, at image.Point) *ttmScene {
-	s := &ttmScene{r: r, d: d, seed: seed, spec: spec, at: at, sc: script.NewScript(spec.name, spec.ttm)}
+func newScriptScene(r *render.Renderer, d *gameData, seed uint64, ttm *ttmSpec, ads *adsSpec, at image.Point) *scriptScene {
+	s := &scriptScene{r: r, d: d, seed: seed, at: at, ttm: ttm, ads: ads}
+	if ttm != nil {
+		s.sc = script.NewScript(ttm.name, ttm.ttm)
+	}
 	c := newScreenCanvas(r, d)
 	c.screenLoaded = func() { s.island.still = true }
 	s.sched = script.NewScheduler(c)
+	s.sched.Rand = rand.New(rand.NewPCG(seed, 1))
 	s.start()
 	return s
 }
 
-// start redraws the island, the same each time, and starts the clips.
-func (s *ttmScene) start() {
+// start redraws the island, the same each time, and starts the clips or
+// the scene.
+func (s *scriptScene) start() {
 	s.r.Saved.Clear()
 	s.island = newIslandScene(s.r, s.d, rand.New(rand.NewPCG(s.seed, 0)), false, s.at)
-	if len(s.spec.tags) == 0 {
+	s.plays++
+	if s.ads != nil {
+		// Each play loads the scene's scripts afresh, as the original
+		// does for every scene.
+		scripts := map[uint16]*script.Script{}
+		for _, res := range s.ads.ads.Resources {
+			e := s.d.archive.Find(res.Name)
+			if e == nil {
+				continue
+			}
+			if ttm, err := resource.DecodeTTM(e); err == nil {
+				scripts[res.ID] = script.NewScript(res.Name, ttm)
+			}
+		}
+		// The tag was checked when parsing the option.
+		s.scene, _ = script.NewScene(s.sched, s.ads.name, s.ads.ads, scripts, s.ads.tag)
+		return
+	}
+	if len(s.ttm.tags) == 0 {
 		s.sched.AddScript(s.sc)
 	}
-	for _, tag := range s.spec.tags {
+	for _, tag := range s.ttm.tags {
 		s.sched.Add(s.sc, tag, 0)
 	}
-	s.plays++
 }
 
 // Tick advances the scene by one redraw.
-func (s *ttmScene) Tick() {
+func (s *scriptScene) Tick() {
 	s.island.Tick()
-	s.sched.Step()
+	if s.scene != nil {
+		s.scene.Step()
+	} else {
+		s.sched.Step()
+	}
 	if len(s.sched.Threads()) == 0 {
 		if s.pause == 0 {
 			s.pause = loopPause
@@ -118,7 +188,7 @@ func (s *ttmScene) Tick() {
 }
 
 // Status describes what is playing, for the debug overlay.
-func (s *ttmScene) Status() string {
+func (s *scriptScene) Status() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "play %d", s.plays)
 	for _, t := range s.sched.Threads() {

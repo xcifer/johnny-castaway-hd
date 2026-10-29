@@ -70,6 +70,7 @@ type Script struct {
 	code    []resource.Instr
 	tags    []tagPos // in code order
 	bitmaps [bmpSlots][]Sprite
+	bmpName [bmpSlots]string // file loaded in each bitmap slot
 }
 
 type tagPos struct {
@@ -414,6 +415,7 @@ func (s *Scheduler) exec(t *Thread, in resource.Instr) bool {
 			s.warnf("%s at %d: %v", t.Script.Name, in.Offset, err)
 		}
 		t.Script.bitmaps[t.bmp] = sprites
+		t.Script.bmpName[t.bmp] = in.Str
 	case opDrawBackground, opSetPaletteSlot, opLocalTag, opTag, opUnknown1,
 		opSetFrame1, opSaveImage1, opSaveZone, opDrawScreen, opLoadPalette:
 		// Not needed to draw the game; see docs/ttm-opcodes.md.
@@ -428,8 +430,12 @@ func (s *Scheduler) exec(t *Thread, in resource.Instr) bool {
 
 func (s *Scheduler) drawSprite(t *Thread, in resource.Instr, flip bool) {
 	n, slot := int(in.Args[2]), int(in.Args[3])
-	if slot >= bmpSlots || n >= len(t.Script.bitmaps[slot]) {
+	switch {
+	case slot >= bmpSlots || t.Script.bitmaps[slot] == nil:
 		s.warnf("%s at %d: sprite %d of bitmap slot %d isn't loaded", t.Script.Name, in.Offset, n, slot)
+		return
+	case n >= len(t.Script.bitmaps[slot]):
+		s.warnf("%s at %d: %s has no sprite %d", t.Script.Name, in.Offset, t.Script.bmpName[slot], n)
 		return
 	}
 	t.layer.DrawSprite(t.Script.bitmaps[slot][n], coord(in.Args[0]), coord(in.Args[1]), flip)

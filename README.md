@@ -47,7 +47,8 @@ with Johnny walking.
 | `-seed N` | Fixed random seed, for repeatable runs |
 | `-shot FILE.png -shotsize 3840x2160 -shotticks N` | Render one frame at any size after N ticks, save it and exit |
 | `-ttm NAME` or `-ttm NAME:TAG,TAG` | Play one animation script, or some of its clips, over and over (see [docs/ttm-opcodes.md](docs/ttm-opcodes.md)) |
-| `-left` | Move the island to the left, as some scenes do (for `-ttm` scripts drawn for that place) |
+| `-ads NAME:SCENE` | Play one scene of a scene script over and over (see [docs/ads-opcodes.md](docs/ads-opcodes.md)) |
+| `-left` | Move the island to the left, as some scenes do (for `-ttm` and `-ads`) |
 | `-frames N` | Exit after N ticks (64 a second) and log the measured tick rate |
 
 The picture is always 16:9: the original 4:3 scene is centered and the sea extends to the sides.

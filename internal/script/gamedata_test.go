@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -62,7 +63,7 @@ func loadScripts(t *testing.T, a *resource.Archive) map[string]*Script {
 // its pictures: those warnings are expected here.
 func TestGameDataScripts(t *testing.T) {
 	a, pal := loadGameData(t)
-	expected := regexp.MustCompile(`isn't loaded$|^FIRE\.TTM at \d+: (FLAME|FLURRY)\.BMP not found$|^SASKDATE\.TTM at 4638: color 207 outside the palette, using 15$`)
+	expected := regexp.MustCompile(`isn't loaded$|\.BMP has no sprite \d+$|^FIRE\.TTM at \d+: (FLAME|FLURRY)\.BMP not found$|^SASKDATE\.TTM at 4638: color 207 outside the palette, using 15$`)
 	scripts := loadScripts(t, a)
 	if len(scripts) != 41 {
 		t.Fatalf("%d scripts, want 41", len(scripts))
@@ -115,9 +116,15 @@ func TestGameDataScripts(t *testing.T) {
 		snapshot()
 		lines = append(lines, fmt.Sprintf("%s ticks %d frames %d samples %d %x", name, redraws*FrameTicks, frames, samples, h.Sum(nil)))
 	}
-	got := strings.Join(lines, "\n") + "\n"
+	compareGolden(t, "scripts.md5", lines)
+}
 
-	golden := filepath.Join("testdata", "scripts.md5")
+// compareGolden compares lines with testdata/name, or rewrites it with
+// -update.
+func compareGolden(t *testing.T, name string, lines []string) {
+	t.Helper()
+	got := strings.Join(lines, "\n") + "\n"
+	golden := filepath.Join("testdata", name)
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
 			t.Fatal(err)
@@ -141,7 +148,7 @@ func TestGameDataScripts(t *testing.T) {
 				t.Errorf("changed or new: %s", l)
 			}
 		}
-		t.Error("output differs from testdata/scripts.md5")
+		t.Errorf("output differs from testdata/%s", name)
 	}
 }
 
@@ -207,4 +214,97 @@ func TestGameDataClips(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Warnings the game data causes in its scenes. Each is a mistake in the
+// original scripts; see docs/ads-opcodes.md.
+var sceneWarnings = map[string]bool{
+	"MJDIVE.TTM at 66: sprite 9 of bitmap slot 1 isn't loaded":      true,
+	"GJVIS5.TTM at 3478: sprite 0 of bitmap slot 1 isn't loaded":    true,
+	"GJGULIVR.TTM at 3614: sprite 26 of bitmap slot 1 isn't loaded": true,
+	"GJNAT1.TTM at 518: GJNAT1LI.BMP has no sprite 19":              true,
+	"GJNAT1.TTM at 6556: GJNAT1.BMP has no sprite 27":               true,
+	"GJVIS3.TTM at 4356: GJVIS3.BMP has no sprite 12":               true,
+	"GJVIS3.TTM at 4496: GJVIS3.BMP has no sprite 12":               true,
+	"SMDATE.TTM at 6332: SMDATE11.BMP has no sprite 31":             true,
+	"SMDATE.TTM at 6362: SMDATE11.BMP has no sprite 30":             true,
+	"SMDATE.TTM at 6388: SMDATE11.BMP has no sprite 31":             true,
+	"SASKDATE.TTM at 1928: SJGFTASK.BMP has no sprite 41":           true,
+	"SASKDATE.TTM at 4638: color 207 outside the palette, using 15": true,
+}
+
+// Every scene of every scene script must end, with no warnings but the
+// known ones, and start its clips as before (testdata/scenes.md5, which
+// fingerprints the clips started and when, for five random seeds; run
+// with -update to rewrite it).
+func TestGameDataScenes(t *testing.T) {
+	a, pal := loadGameData(t)
+	var lines []string
+	seen := map[string]bool{}
+	for i := range a.Entries {
+		e := &a.Entries[i]
+		if e.Type() != "ADS" {
+			continue
+		}
+		ads, err := resource.DecodeADS(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tag := range ads.Tags {
+			h := md5.New()
+			longest := 0
+			for seed := range uint64(5) {
+				scripts := map[uint16]*Script{}
+				for _, r := range ads.Resources {
+					ttm, err := resource.DecodeTTM(a.Find(r.Name))
+					if err != nil {
+						t.Fatal(err)
+					}
+					scripts[r.ID] = NewScript(r.Name, ttm)
+				}
+				s := NewScheduler(NewPaletted(a, pal))
+				s.Rand = rand.New(rand.NewPCG(seed, 0))
+				s.Logf = func(format string, args ...any) {
+					msg := fmt.Sprintf(format, args...)
+					seen[msg] = true
+					if !sceneWarnings[msg] {
+						t.Errorf("%s scene %d: %s", e.Name, tag.ID, msg)
+					}
+				}
+				sc, err := NewScene(s, e.Name, ads, scripts, tag.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var playing []*Thread
+				redraw := 0
+				for ; !sc.Done(); redraw++ {
+					if redraw == 20000 {
+						t.Fatalf("%s scene %d (seed %d) still playing after %d redraws", e.Name, tag.ID, seed, redraw)
+					}
+					if redraw > 0 {
+						sc.Step()
+					}
+					s.Play()
+					for _, th := range s.Threads() {
+						if !slices.Contains(playing, th) {
+							fmt.Fprintf(h, "%s:%d@%d ", th.Script.Name, th.Tag, redraw)
+						}
+					}
+					playing = s.Threads()
+				}
+				fmt.Fprintf(h, "end@%d\n", redraw)
+				longest = max(longest, redraw)
+			}
+			lines = append(lines, fmt.Sprintf("%s %d longest %d %x", e.Name, tag.ID, longest, h.Sum(nil)))
+		}
+	}
+	if len(lines) != 66 {
+		t.Errorf("%d scenes, want 66", len(lines))
+	}
+	for msg := range sceneWarnings {
+		if !seen[msg] {
+			t.Errorf("expected warning never seen: %s", msg)
+		}
+	}
+	compareGolden(t, "scenes.md5", lines)
 }
