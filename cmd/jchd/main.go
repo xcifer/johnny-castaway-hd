@@ -441,6 +441,8 @@ func main() {
 		ebiten.SetFullscreen(true)
 		ebiten.SetCursorMode(ebiten.CursorModeHidden)
 		if !opt.debug {
+			// Above windows kept on top too, as Windows' own screensavers are.
+			ebiten.SetWindowFloating(true)
 			g.watched = watchInput(mouseSlack*ebiten.Monitor().DeviceScaleFactor(), g.end)
 		}
 		if mode == saverRun {
