@@ -26,6 +26,8 @@ display's refresh rate and always shows the latest state.
 | Johnny walking between spots | one step per redraw | measured |
 | Pause after arriving | about 13 redraws (0.8 s) | measured, includes starting the next scene |
 | Shore waves | every 2 redraws | jc_reborn's 8 ticks, not yet checked |
+| Title picture at the start | 10 redraws (0.625 s) | measured: 0.584, 0.634 and 0.600 s |
+| Black screen after the title and after each run | 12 redraws (0.75 s) | measured: 0.834, 0.801, 0.751 s after the title; 1.218 and 0.751 s between runs. The shortest is taken; the longer ones are presumably the original loading. |
 
 ## How it was measured
 

@@ -83,6 +83,14 @@ func (c *screenCanvas) SaveZone(l script.Layer, x, y, w, h int) {
 
 func (c *screenCanvas) ClearSaved() { c.r.Saved.Clear() }
 
+// clear removes everything the scripts have drawn.
+func (c *screenCanvas) clear() {
+	for _, l := range c.layers {
+		l.l.Clear()
+	}
+	c.r.Saved.Clear()
+}
+
 // canvasLayer is a script layer drawn by the renderer.
 type canvasLayer struct {
 	c *screenCanvas

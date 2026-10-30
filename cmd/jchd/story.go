@@ -13,9 +13,14 @@ import (
 	"github.com/xcifer/johnny-castaway-hd/internal/story"
 )
 
-// introDelay is how long the title picture shows, in redraws: jc_reborn's
-// 100 ticks, not checked against the original.
-const introDelay = 100 / script.FrameTicks
+// In redraws, as measured in recordings of the original: the title picture
+// shows for about 0.6 s, then the screen goes black for 0.75 s, as it does
+// after every run. (The original's black sometimes lasts longer, up to
+// 1.2 s, presumably while it loads.)
+const (
+	introDelay = 10
+	blackDelay = 12
+)
 
 // storyScene is the screensaver itself: run after run of scenes, with
 // Johnny walking from each to the next.
@@ -32,6 +37,7 @@ type storyScene struct {
 	walkSprites     []*render.Sprite
 
 	island *island // nil while a run plays off the island
+	black  bool    // the screen is black between runs
 	run    *story.Run
 	runDay int
 	runs   int
@@ -103,6 +109,11 @@ func (s *storyScene) Tick() {
 // last one is over.
 func (s *storyScene) startNext() {
 	if s.run == nil || s.next == len(s.run.Scenes) {
+		if !s.black {
+			s.blackOut()
+			return
+		}
+		s.black = false
 		s.newRun()
 	}
 	sc := s.run.Scenes[s.next]
@@ -134,6 +145,18 @@ func (s *storyScene) loadADS(name string) (*resource.ADS, error) {
 		return nil, fmt.Errorf("%s not found", name)
 	}
 	return resource.DecodeADS(e)
+}
+
+// blackOut clears the whole screen for blackDelay redraws, this one
+// included.
+func (s *storyScene) blackOut() {
+	s.black = true
+	s.island = nil
+	s.r.Background.Clear()
+	s.canvas.clear()
+	s.walker.Clear()
+	s.holiday.Clear()
+	s.wait = blackDelay - 1
 }
 
 // newRun plans the next run and sets up the island for it.
@@ -188,7 +211,10 @@ func (s *storyScene) tickWalk() {
 
 // Status describes what is playing, for the debug overlay.
 func (s *storyScene) Status() string {
-	if s.run == nil {
+	switch {
+	case s.black:
+		return "black between runs"
+	case s.run == nil:
 		return "intro"
 	}
 	is := s.run.Island

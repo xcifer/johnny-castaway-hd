@@ -17,6 +17,11 @@ The screensaver plays **runs**, one after another. A run:
    so far: always at least 6 and at most 19, most often 8 to 10.
 4. Plays the final scene.
 
+As in the original, the screen then cuts to black for 0.75 s, and the next run's island
+appears at once. The screensaver starts with the title picture (`INTRO.SCR`) for 0.6 s and the
+same black screen (see [timing.md](timing.md)). jc_reborn draws animated wipes here instead;
+the recordings show none.
+
 Between two scenes Johnny walks from where the last one left him to where the next one starts.
 
 The table of 63 scenes is `story.Scenes`. Each has a start and end spot (A to F) and heading,
@@ -76,5 +81,5 @@ Each picture of a walk shows for one redraw, the last for about 13 (see [timing.
 
 ## Not yet done
 
-Fading out between runs, and the shore waves' timing, which comes from jc_reborn and hasn't
-been checked against the original.
+The shore waves' timing, which comes from jc_reborn and hasn't been checked against the
+original.
