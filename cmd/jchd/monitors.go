@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"sync/atomic"
+	"time"
 )
 
 // otherScreenArgs are the options for the copy of the screensaver on
@@ -21,9 +21,9 @@ func otherScreenArgs(i, pid, day int, blank bool) []string {
 }
 
 // startOtherScreens starts a copy of the screensaver for each monitor but
-// the main one. stop is set when any of them ends, so that all screens go
+// the main one. stop is called when any of them ends, so that all screens go
 // together. The copies are returned to be ended with this process.
-func startOtherScreens(monitors, day int, blank bool, stop *atomic.Bool) []*exec.Cmd {
+func startOtherScreens(monitors, day int, blank bool, stop func()) []*exec.Cmd {
 	exe, err := os.Executable()
 	if err != nil {
 		log.Printf("other monitors: %v", err)
@@ -38,19 +38,33 @@ func startOtherScreens(monitors, day int, blank bool, stop *atomic.Bool) []*exec
 		}
 		go func() {
 			cmd.Wait()
-			stop.Store(true)
+			stop()
 		}()
 		cmds = append(cmds, cmd)
 	}
 	return cmds
 }
 
-// follow sets stop when the process pid ends.
-func follow(pid int, stop *atomic.Bool) {
+// follow calls stop when the process pid ends.
+func follow(pid int, stop func()) {
 	go func() {
 		if err := waitProcess(pid); err != nil {
 			log.Printf("-follow %d: %v", pid, err)
 		}
-		stop.Store(true)
+		stop()
 	}()
+}
+
+// stopWait is how long the game may take to end once asked to, before the
+// process is ended outright. While monitors wake from sleep, drawing can
+// hang for seconds, and the game with it.
+const stopWait = 500 * time.Millisecond
+
+// end asks the game to end. Copies on other monitors follow this process,
+// so they end with it either way.
+func (g *game) end() {
+	if g.stop.Swap(true) {
+		return
+	}
+	time.AfterFunc(stopWait, func() { os.Exit(0) })
 }

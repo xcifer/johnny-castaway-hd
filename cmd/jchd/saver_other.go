@@ -35,6 +35,12 @@ func readInput() (inputState, bool) {
 	return in, true
 }
 
+// watchInput leaves the mouse and keyboard to be read with readInput as the
+// game runs, since Ebitengine only reports them there.
+func watchInput(slack float64, used func()) bool {
+	return false
+}
+
 // waitProcess waits for the process pid to end, checking every second.
 func waitProcess(pid int) error {
 	p, err := os.FindProcess(pid)

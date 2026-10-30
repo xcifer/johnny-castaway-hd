@@ -86,7 +86,8 @@ type game struct {
 	start    time.Time // first tick
 	keys     []ebiten.Key
 	input    inputWatch
-	stop     atomic.Bool // set when the screensaver on another monitor ends
+	watched  bool        // the mouse and keyboard are watched by watchInput
+	stop     atomic.Bool // set by end
 }
 
 func (g *game) newScene(w, h int) error {
@@ -135,7 +136,10 @@ func (g *game) Update() error {
 	if g.opt.frames > 0 && g.frames >= g.opt.frames {
 		return ebiten.Termination
 	}
-	if g.quitRequested() || g.stop.Load() {
+	if g.quitRequested() {
+		g.end()
+	}
+	if g.stop.Load() {
 		return ebiten.Termination
 	}
 	if g.opt.debug {
@@ -173,6 +177,9 @@ func (g *game) tick() {
 func (g *game) quitRequested() bool {
 	if g.opt.debug {
 		return inpututil.IsKeyJustPressed(ebiten.KeyEscape)
+	}
+	if g.watched {
+		return false
 	}
 	if !g.opt.windowed {
 		in, ok := readInput()
@@ -433,12 +440,15 @@ func main() {
 		}
 		ebiten.SetFullscreen(true)
 		ebiten.SetCursorMode(ebiten.CursorModeHidden)
+		if !opt.debug {
+			g.watched = watchInput(mouseSlack*ebiten.Monitor().DeviceScaleFactor(), g.end)
+		}
 		if mode == saverRun {
-			others = startOtherScreens(len(monitors), g.day(), s.MainOnly, &g.stop)
+			others = startOtherScreens(len(monitors), g.day(), s.MainOnly, g.end)
 		}
 	}
 	if opt.follow > 0 {
-		follow(opt.follow, &g.stop)
+		follow(opt.follow, g.end)
 	}
 
 	err = ebiten.RunGame(g)

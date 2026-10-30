@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"os"
+	"time"
 	"unsafe"
 )
 
@@ -42,6 +43,24 @@ func readInput() (inputState, bool) {
 	}
 	in.down = keys
 	return in, true
+}
+
+// watchInput calls used once the mouse or keyboard is used, checking
+// ticksPerSecond times a second apart from the game, which can hang for
+// seconds while monitors wake from sleep.
+func watchInput(slack float64, used func()) bool {
+	go func() {
+		var w inputWatch
+		t := time.NewTicker(time.Second / ticksPerSecond)
+		for range t.C {
+			if in, ok := readInput(); ok && w.used(in, slack) {
+				t.Stop()
+				used()
+				return
+			}
+		}
+	}()
+	return true
 }
 
 // waitProcess waits for the process pid to end. On Windows it can be any
