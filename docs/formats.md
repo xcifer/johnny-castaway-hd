@@ -122,13 +122,40 @@ Data quirks:
 type 28677 (`0x7005`), IDs 1–23. Each is a RIFF WAVE file, 8-bit mono PCM at 11,025 Hz, padded
 to a multiple of 512 bytes. Resources 1–22 match the MD5s of the sound files listed by jc_reborn.
 
-**Open question: which sound number plays which resource.** TTM `PLAY_SAMPLE n` uses
-*n* = 1–12, 14–16, 18–24. The reference projects agree for 1–10 and that 11 has no sound, but
-differ from 12 on:
+Resource 15 is the first 0.386 s of resource 6, sample for sample.
+
+### Which sound PLAY_SAMPLE plays
+
+TTM `PLAY_SAMPLE n` uses *n* = 1–12, 14–16, 18–24. The reference projects agree for 1–10 and
+that 11 has no sound, but differ from 12 on:
 
 | Sample | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | jc_reborn → resource | 11 | – | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | – |
 | xesf → resource | 12 | 11 | 15 | 22 | 13 | 14 | 23 | 16 | 17 | 18 | 19 | 20 | 21 | 22 |
 
-To be settled by listening against the original before sound is wired up.
+**jc_reborn's numbering is right.** Each sound resource was located in the audio of two
+recordings of the original (normalized cross-correlation of the WAV against the recording), and
+the sounds heard were matched with the scripts playing at the time:
+
+| Script, clip | Script plays | Heard | jc_reborn | xesf |
+|---|---|---|---|---|
+| MJSAND tag 3, building the castle | 15 every 3 frames of delay 3 | resource 13 every 0.1875 s, 21 times | 13 ✓ | 22 ✗ |
+| MJSAND tags 15, 7, 8, 17 | 9, 3, then 23 in a loop, then 24 | 9, 3, 21 every 0.25 s, 22 | 21, 22 ✓ | 20, 21 ✗ |
+| MJFISH or MJFISHC, casting | 4, then 16 four redraws later | 4, then 14 | 14 ✓ | 13 ✗ |
+| GJDIVE, three times | 14, 8, 1, 19, …, 16 ×5 | 12, 8, 1, 17 (faint), 14 ×5 | ✓ | 15, 16, 13 ✗ |
+| MJJOG | 22 ×6, 9s and 4s, 22 ×6 | 20 ×6, 9s and 4s, 20 ×6 | 20 ✓ | 19 ✗ |
+| Swimming, most likely MJBATH | 21 many times, then 24 | 19 many times, then 22 | 19, 22 ✓ | 18, 21 ✗ |
+
+Resource 14 is heard 38 times; in xesf's numbering no script can play it. Samples 12, 18 and
+20 are only used by scenes the recordings don't show; they follow the same numbering.
+Resource 23 is never heard and no sample plays it. Sample 11 (once, in `GJCATCH2.TTM`) has no
+sound.
+
+**One sound at a time.** A new sound stops the one playing. In the recordings, wherever a loud
+sound is cut short by the next one (27 cases, the cut part up to 7.8 times louder than the
+start of the new sound), the audio fits the first sound stopping, and doesn't fit the two
+playing together.
+
+jc_reborn also plays a sound 0 before each scene of the story's days. No such sound is in
+`SCRANTIC.SCR`, so it isn't played.

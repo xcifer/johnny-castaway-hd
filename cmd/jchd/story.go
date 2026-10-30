@@ -50,7 +50,7 @@ type storyScene struct {
 	wait int // redraws until the next picture of the walk, or of the intro
 }
 
-func newStoryScene(r *render.Renderer, d *gameData, rng *rand.Rand, now func() time.Time, day func() int) *storyScene {
+func newStoryScene(r *render.Renderer, d *gameData, rng *rand.Rand, now func() time.Time, day func() int, sound func(int)) *storyScene {
 	s := &storyScene{r: r, d: d, rng: rng, now: now, day: day, walkSprites: d.sprites(d.walk)}
 	s.canvas = newScreenCanvas(r, d)
 	s.canvas.screenLoaded = func() {
@@ -62,6 +62,7 @@ func newStoryScene(r *render.Renderer, d *gameData, rng *rand.Rand, now func() t
 	s.holiday = r.NewLayer() // on top of everything, as in the original
 	s.sched = script.NewScheduler(s.canvas)
 	s.sched.Rand = rng
+	s.sched.Sound = sound
 
 	if err := s.canvas.LoadScreen("INTRO.SCR"); err == nil {
 		s.wait = introDelay

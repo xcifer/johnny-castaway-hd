@@ -55,6 +55,7 @@ moves on once for each date the screensaver runs and is kept in
 | `-left` | Move the island to the left, as some scenes do (for `-ttm` and `-ads`) |
 | `-day N` | Play day N (1-11) of the story instead of the saved day, without saving |
 | `-date "2026-12-24 15:30"` | Pretend the clock started at this time, for night and holidays, without saving |
+| `-mute` | Play without sound |
 | `-frames N` | Exit after N ticks (64 a second) and log the measured tick rate |
 
 The picture is always 16:9: the original 4:3 scene is centered and the sea extends to the sides.

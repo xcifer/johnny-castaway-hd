@@ -62,7 +62,7 @@ effect is known. **guess**: implemented, but how the original behaves is uncerta
 | 0xA524 | DRAW_SPRITE_FLIP *x y n slot* | 2822 | done | The same, mirrored left to right within its box. |
 | 0xA601 | CLEAR_SCREEN *n* | 6814 | done | Clears the whole layer, ignoring the clip zone. The argument (0, 1 or 2) is ignored. |
 | 0xB606 | DRAW_SCREEN *x y w h* 2 1 | 6 | ignored | Ignored as in jc_reborn, but its arguments are a rectangle, so it may well draw something. To check against recordings. |
-| 0xC051 | PLAY_SAMPLE *n* | 535 | done | Plays sound *n* (no sound output yet). |
+| 0xC051 | PLAY_SAMPLE *n* | 535 | done | Plays sound *n*, stopping the one playing (see [formats.md](formats.md#which-sound-play_sample-plays)). |
 | 0xF01F | LOAD_SCREEN *name* | 40 | done | Replaces the background and clears the saved zones. |
 | 0xF02F | LOAD_IMAGE *name* | 263 | done | Loads a BMP into the selected bitmap slot. |
 | 0xF05F | LOAD_PALETTE | 41 | ignored | Always JOHNCAST.PAL. |

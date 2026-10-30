@@ -25,6 +25,7 @@ type gameData struct {
 	holiday    *resource.Sprites // HOLIDAY.BMP
 	walk       *resource.Sprites // JOHNWALK.BMP
 	walkTable  []resource.WalkStep
+	sounds     []resource.Sound
 
 	ready   map[*resource.Sprites][]*render.Sprite
 	screens map[*resource.Image]*render.Sprite
@@ -88,6 +89,9 @@ func loadGameData(dir string) (*gameData, error) {
 		return nil, err
 	}
 	if d.walkTable, err = resource.WalkTable(exe); err != nil {
+		return nil, err
+	}
+	if d.sounds, err = resource.Sounds(exe); err != nil {
 		return nil, err
 	}
 	return d, nil

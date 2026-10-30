@@ -24,6 +24,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
+	"github.com/xcifer/johnny-castaway-hd/internal/audio"
 	"github.com/xcifer/johnny-castaway-hd/internal/render"
 	"github.com/xcifer/johnny-castaway-hd/internal/script"
 	"github.com/xcifer/johnny-castaway-hd/internal/story"
@@ -49,6 +50,7 @@ type options struct {
 	left      bool // island moved left, for scripts of scenes that need it
 	day       int  // day of the story, instead of the saved one
 	date      string
+	mute      bool
 }
 
 // scene is what plays on the screen. Tick advances it by one redraw.
@@ -65,6 +67,7 @@ type game struct {
 	ads     *adsSpec
 	now     func() time.Time
 	day     func() int
+	sound   func(sample int) // nil when silent
 
 	screen   image.Point // screen size in pixels, from LayoutF
 	renderer *render.Renderer
@@ -88,9 +91,9 @@ func (g *game) newScene(w, h int) error {
 	case g.data == nil:
 		g.scene = nil
 	case g.ttm != nil || g.ads != nil:
-		g.scene = newScriptScene(r, g.data, g.opt.seed, g.ttm, g.ads, g.island())
+		g.scene = newScriptScene(r, g.data, g.opt.seed, g.ttm, g.ads, g.island(), g.sound)
 	default:
-		g.scene = newStoryScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), g.now, g.day)
+		g.scene = newStoryScene(r, g.data, rand.New(rand.NewPCG(g.opt.seed, 0)), g.now, g.day, g.sound)
 	}
 	return nil
 }
@@ -295,6 +298,7 @@ func parseFlags() options {
 	flag.BoolVar(&opt.left, "left", false, "move the island to the left, as scenes such as fishing at C (MJFISHC) need")
 	flag.IntVar(&opt.day, "day", 0, "play this day of the story (1-11) instead of the saved one, without saving")
 	flag.StringVar(&opt.date, "date", "", `pretend the clock started at this time, such as "2026-12-24 15:30", without saving`)
+	flag.BoolVar(&opt.mute, "mute", false, "play without sound")
 	flag.Parse()
 
 	switch filter {
@@ -341,6 +345,15 @@ func main() {
 	g.data, g.dataErr = loadGameData(opt.dataDir)
 	if g.dataErr != nil {
 		log.Printf("game data: %v", g.dataErr)
+	}
+	// -shot runs hours in seconds, so it plays no sound.
+	if g.data != nil && !opt.mute && opt.shot == "" {
+		p, err := audio.NewPlayer(g.data.sounds)
+		if err != nil {
+			log.Printf("sound: %v", err)
+		} else {
+			g.sound = p.Play
+		}
 	}
 	if opt.ttm != "" && opt.ads != "" {
 		log.Fatal("-ttm and -ads can't be used together")

@@ -139,7 +139,7 @@ type scriptScene struct {
 	plays  int
 }
 
-func newScriptScene(r *render.Renderer, d *gameData, seed uint64, ttm *ttmSpec, ads *adsSpec, at image.Point) *scriptScene {
+func newScriptScene(r *render.Renderer, d *gameData, seed uint64, ttm *ttmSpec, ads *adsSpec, at image.Point, sound func(int)) *scriptScene {
 	s := &scriptScene{r: r, d: d, seed: seed, at: at, ttm: ttm, ads: ads}
 	if ttm != nil {
 		s.sc = script.NewScript(ttm.name, ttm.ttm)
@@ -148,6 +148,7 @@ func newScriptScene(r *render.Renderer, d *gameData, seed uint64, ttm *ttmSpec, 
 	c.screenLoaded = func() { s.island.still = true }
 	s.sched = script.NewScheduler(c)
 	s.sched.Rand = rand.New(rand.NewPCG(seed, 1))
+	s.sched.Sound = sound
 	s.start()
 	return s
 }

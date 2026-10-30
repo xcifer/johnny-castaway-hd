@@ -76,5 +76,5 @@ Each picture of a walk shows for one redraw, the last for about 13 (see [timing.
 
 ## Not yet done
 
-Fading out between runs, the sounds, and the shore waves' timing, which comes from jc_reborn and
-hasn't been checked against the original.
+Fading out between runs, and the shore waves' timing, which comes from jc_reborn and hasn't
+been checked against the original.
