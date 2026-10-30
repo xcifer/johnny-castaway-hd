@@ -34,8 +34,17 @@ func main() {
 	force := flag.Bool("force", false, "write files even if their MD5 doesn't match a known version")
 	flag.Parse()
 
-	if err := run(*src, *dst, *force); err != nil {
+	err := run(*src, *dst, *force)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "jcunpack:", err)
+	}
+	// Started by a double-click, the window would close before the
+	// result could be read.
+	if ownConsole() {
+		fmt.Print("Press Enter to close.")
+		fmt.Scanln()
+	}
+	if err != nil {
 		os.Exit(1)
 	}
 }
