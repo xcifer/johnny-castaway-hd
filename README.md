@@ -41,8 +41,11 @@ go build -o bin/jchd.exe ./cmd/jchd
 The same program built as `JohnnyCastawayHD.scr` is the screensaver:
 
 ```
-go build -o bin/JohnnyCastawayHD.scr ./cmd/jchd
+go build -ldflags=-H=windowsgui -o bin/JohnnyCastawayHD.scr ./cmd/jchd
 ```
+
+`-H=windowsgui` keeps Windows from opening a console window when it starts the screensaver; the
+price is that its log goes nowhere, so use `jchd.exe` to see it.
 
 Windows starts a screensaver with `/s` to run it, `/c` for its settings and `/p` for the little
 preview in Screen Saver Settings; with no arguments it shows the settings. There are no settings
