@@ -293,7 +293,7 @@ func (g *game) screenshot() (bool, error) {
 func parseFlags(args []string) options {
 	var opt options
 	var filter, shotSize string
-	flag.StringVar(&opt.dataDir, "data", "gamedata", "folder with RESOURCE.MAP, RESOURCE.001 and SCRANTIC.SCR")
+	flag.StringVar(&opt.dataDir, "data", "", "folder with RESOURCE.MAP, RESOURCE.001 and SCRANTIC.SCR (default: next to the program, or a gamedata folder there or in the current folder)")
 	flag.BoolVar(&opt.windowed, "windowed", false, "run in a window instead of fullscreen")
 	flag.BoolVar(&opt.debug, "debug", false, "keys control the display (F1 overlay, F2 filter, Esc exits)")
 	flag.IntVar(&opt.frames, "frames", 0, "exit after this many ticks (for automated tests)")
@@ -366,7 +366,12 @@ func main() {
 	default:
 		g.day = savedDay(g.now)
 	}
-	g.data, g.dataErr = loadGameData(opt.dataDir)
+	if opt.dataDir == "" {
+		g.opt.dataDir, g.dataErr = defaultDataDir()
+	}
+	if g.dataErr == nil {
+		g.data, g.dataErr = loadGameData(g.opt.dataDir)
+	}
 	if g.dataErr != nil {
 		log.Printf("game data: %v", g.dataErr)
 	}

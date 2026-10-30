@@ -15,7 +15,9 @@ copy of *Screen Antics: Johnny Castaway* that you own:
 - `RESOURCE.MAP`
 - `RESOURCE.001`
 
-For development, put them in a `gamedata/` folder in the repo root. Git ignores this folder.
+The screensaver looks for them next to `JohnnyCastawayHD.scr`, then in a `gamedata` folder next
+to it. For development, put them in a `gamedata/` folder in the repo root, which is also searched
+when the program is run from there. Git ignores this folder.
 
 **Only have the install floppy?** On the floppy these files are compressed (`SCRANTIC.SC$`,
 `RESOURCE.00$`). Copy everything from the floppy (or out of a disk image, e.g. with 7-Zip)
@@ -62,7 +64,7 @@ doesn't exit.
 | `-windowed` | Run in a 1280×720 window |
 | `-debug` | Keys control the display: F1 info overlay, F2 scaling filter, Esc exits |
 | `-filter sharp\|nearest\|smooth` | How the original art is scaled up (default `sharp`) |
-| `-data DIR` | Game data folder (default `gamedata`) |
+| `-data DIR` | Game data folder (default: searched as described above) |
 | `-seed N` | Fixed random seed, for repeatable runs |
 | `-shot FILE.png -shotsize 3840x2160 -shotticks N` | Render one frame at any size after N ticks, save it and exit |
 | `-ttm NAME` or `-ttm NAME:TAG,TAG` | Play one animation script, or some of its clips, over and over (see [docs/ttm-opcodes.md](docs/ttm-opcodes.md)) |
