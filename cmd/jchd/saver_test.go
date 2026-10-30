@@ -63,31 +63,71 @@ func TestOtherScreenArgs(t *testing.T) {
 	}
 }
 
-func TestMouseWatch(t *testing.T) {
-	var m mouseWatch
+func TestInputWatchMouse(t *testing.T) {
+	var w inputWatch
+	at := func(p image.Point) inputState { return inputState{mouse: p} }
 	// While settling, the resting place follows the mouse, however far.
 	for i := range mouseSettle {
-		if m.moved(image.Pt(i*50, 0), 8) {
-			t.Fatalf("moved during settling, at %d", i)
+		if w.used(at(image.Pt(i*50, 0)), 8) {
+			t.Fatalf("used during settling, at %d", i)
 		}
 	}
 	rest := image.Pt((mouseSettle-1)*50, 0)
 	for _, d := range []image.Point{{0, 0}, {8, 0}, {0, -8}, {5, 6}, {-5, -6}, {-8, 0}} {
-		if m.moved(rest.Add(d), 8) {
-			t.Errorf("moved by %v counted, slack 8", d)
+		if w.used(at(rest.Add(d)), 8) {
+			t.Errorf("move by %v counted, slack 8", d)
 		}
 	}
 	for _, d := range []image.Point{{9, 0}, {0, 9}, {6, 6}, {-7, -5}, {500, 300}} {
-		if !m.moved(rest.Add(d), 8) {
-			t.Errorf("moved by %v not counted, slack 8", d)
+		if !w.used(at(rest.Add(d)), 8) {
+			t.Errorf("move by %v not counted, slack 8", d)
 		}
 	}
 	// The resting place doesn't creep along with small moves.
-	if m.moved(rest.Add(image.Pt(5, 0)), 8) || !m.moved(rest.Add(image.Pt(10, 0)), 8) {
+	if w.used(at(rest.Add(image.Pt(5, 0))), 8) || !w.used(at(rest.Add(image.Pt(10, 0))), 8) {
 		t.Error("resting place moved after settling")
 	}
 	// Slack scales, as for 200% display scaling.
-	if m.moved(rest.Add(image.Pt(16, 0)), 16) || !m.moved(rest.Add(image.Pt(17, 0)), 16) {
+	if w.used(at(rest.Add(image.Pt(16, 0))), 16) || !w.used(at(rest.Add(image.Pt(17, 0))), 16) {
 		t.Error("slack 16 not kept")
+	}
+}
+
+func TestInputWatchKeys(t *testing.T) {
+	const shift, a, leftButton = 0x10, 0x41, 0x01
+	var w inputWatch
+	in := inputState{}
+	in.down[shift] = true // held from before the start
+	if w.used(in, 8) {
+		t.Fatal("a key held at the start counted")
+	}
+	for range 3 * mouseSettle {
+		if w.used(in, 8) {
+			t.Fatal("a key kept held counted")
+		}
+	}
+	in.down[a] = true
+	if !w.used(in, 8) {
+		t.Error("a new key press not counted")
+	}
+	if w.used(in, 8) {
+		t.Error("the same press counted twice")
+	}
+	in.down[shift], in.down[a] = false, false
+	if w.used(in, 8) {
+		t.Error("letting go of keys counted")
+	}
+	in.down[shift] = true
+	if !w.used(in, 8) {
+		t.Error("pressing the start's key again not counted")
+	}
+
+	// A press right after the start counts even while the mouse settles.
+	var v inputWatch
+	v.used(inputState{}, 8)
+	click := inputState{}
+	click.down[leftButton] = true
+	if !v.used(click, 8) {
+		t.Error("a click while settling not counted")
 	}
 }

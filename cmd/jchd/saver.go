@@ -72,20 +72,39 @@ const mouseSettle = ticksPerSecond / 2
 // such as from a bumped desk, are ignored.
 const mouseSlack = 8
 
-// mouseWatch tells when the mouse has been moved on purpose.
-type mouseWatch struct {
-	seen int
-	rest image.Point
+// inputState is what the mouse and keyboard are doing: where the mouse is
+// and which keys and mouse buttons are down, by Windows' virtual-key code.
+type inputState struct {
+	mouse image.Point
+	down  [256]bool
 }
 
-// moved reports whether p is further than slack pixels from where the
-// mouse rested.
-func (m *mouseWatch) moved(p image.Point, slack float64) bool {
-	if m.seen < mouseSettle {
-		m.seen++
-		m.rest = p
-		return false
+// inputWatch tells when the mouse or keyboard has been used on purpose.
+type inputWatch struct {
+	seen int
+	rest image.Point
+	down [256]bool
+}
+
+// used reports whether, compared with what it saw before, a key or mouse
+// button has gone down, or the mouse is further than slack pixels from
+// where it rested. Keys already down at the start, such as one still held
+// from clicking Preview, don't count until pressed again.
+func (w *inputWatch) used(in inputState, slack float64) bool {
+	pressed := false
+	if w.seen > 0 {
+		for k, d := range in.down {
+			if d && !w.down[k] {
+				pressed = true
+			}
+		}
 	}
-	d := p.Sub(m.rest)
-	return math.Hypot(float64(d.X), float64(d.Y)) > slack
+	w.down = in.down
+	if w.seen < mouseSettle {
+		w.seen++
+		w.rest = in.mouse
+		return pressed
+	}
+	d := in.mouse.Sub(w.rest)
+	return pressed || math.Hypot(float64(d.X), float64(d.Y)) > slack
 }

@@ -85,7 +85,7 @@ type game struct {
 	frames   int
 	start    time.Time // first tick
 	keys     []ebiten.Key
-	mouse    mouseWatch
+	input    inputWatch
 	stop     atomic.Bool // set when the screensaver on another monitor ends
 }
 
@@ -174,6 +174,12 @@ func (g *game) quitRequested() bool {
 	if g.opt.debug {
 		return inpututil.IsKeyJustPressed(ebiten.KeyEscape)
 	}
+	if !g.opt.windowed {
+		in, ok := readInput()
+		return ok && g.input.used(in, mouseSlack*ebiten.Monitor().DeviceScaleFactor())
+	}
+	// In a window, only keys and clicks meant for it count: the mouse is
+	// often moved over it on the way elsewhere.
 	g.keys = inpututil.AppendJustPressedKeys(g.keys[:0])
 	if len(g.keys) > 0 {
 		return true
@@ -183,12 +189,7 @@ func (g *game) quitRequested() bool {
 			return true
 		}
 	}
-	// In a window, the mouse is often moved over it on the way elsewhere.
-	if g.opt.windowed {
-		return false
-	}
-	x, y := ebiten.CursorPosition()
-	return g.mouse.moved(image.Pt(x, y), mouseSlack*ebiten.Monitor().DeviceScaleFactor())
+	return false
 }
 
 func (g *game) Draw(screen *ebiten.Image) {
