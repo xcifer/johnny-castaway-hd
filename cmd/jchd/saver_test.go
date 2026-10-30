@@ -48,6 +48,21 @@ func TestParseSaverArgs(t *testing.T) {
 	}
 }
 
+func TestOtherScreenArgs(t *testing.T) {
+	got := strings.Join(otherScreenArgs(1, 4242, 7, false), " ")
+	if want := "-monitor 1 -follow 4242 -mute -day 7"; got != want {
+		t.Errorf("Johnny on every monitor: %q, want %q", got, want)
+	}
+	got = strings.Join(otherScreenArgs(2, 4242, 7, true), " ")
+	if want := "-monitor 2 -follow 4242 -blank"; got != want {
+		t.Errorf("main monitor only: %q, want %q", got, want)
+	}
+	// The copies must be started with options, never as Windows would.
+	if mode, _, err := parseSaverArgs(otherScreenArgs(1, 4242, 7, false)); mode != saverNone || err != nil {
+		t.Errorf("copy's arguments read as screensaver mode %d, %v", mode, err)
+	}
+}
+
 func TestMouseWatch(t *testing.T) {
 	var m mouseWatch
 	// While settling, the resting place follows the mouse, however far.

@@ -20,7 +20,9 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
+	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -54,6 +56,9 @@ type options struct {
 	day       int  // day of the story, instead of the saved one
 	date      string
 	mute      bool
+	monitor   int  // fullscreen on this monitor, 0 being the main one
+	follow    int  // process to end with, for the copies on other monitors
+	blank     bool // show only black, on monitors without Johnny
 }
 
 // scene is what plays on the screen. Tick advances it by one redraw.
@@ -81,6 +86,7 @@ type game struct {
 	start    time.Time // first tick
 	keys     []ebiten.Key
 	mouse    mouseWatch
+	stop     atomic.Bool // set when the screensaver on another monitor ends
 }
 
 func (g *game) newScene(w, h int) error {
@@ -129,7 +135,7 @@ func (g *game) Update() error {
 	if g.opt.frames > 0 && g.frames >= g.opt.frames {
 		return ebiten.Termination
 	}
-	if g.quitRequested() {
+	if g.quitRequested() || g.stop.Load() {
 		return ebiten.Termination
 	}
 	if g.opt.debug {
@@ -186,7 +192,7 @@ func (g *game) quitRequested() bool {
 }
 
 func (g *game) Draw(screen *ebiten.Image) {
-	if g.renderer == nil {
+	if g.renderer == nil || g.opt.blank {
 		screen.Fill(color.Black)
 		return
 	}
@@ -312,6 +318,9 @@ func parseFlags(args []string, s settings) options {
 	flag.IntVar(&opt.day, "day", 0, "play this day of the story (1-11) instead of the saved one, without saving")
 	flag.StringVar(&opt.date, "date", "", `pretend the clock started at this time, such as "2026-12-24 15:30", without saving`)
 	flag.BoolVar(&opt.mute, "mute", s.Mute, "play without sound")
+	flag.IntVar(&opt.monitor, "monitor", 0, "run fullscreen on this monitor (0 = the main one)")
+	flag.IntVar(&opt.follow, "follow", 0, "exit when the process with this ID ends")
+	flag.BoolVar(&opt.blank, "blank", false, "show only black")
 	flag.CommandLine.Parse(args)
 
 	f, ok := filters[filter]
@@ -328,6 +337,9 @@ func parseFlags(args []string, s settings) options {
 	if opt.day < 0 || opt.day > story.Days {
 		log.Fatalf("bad -day %d: the story has days 1 to %d", opt.day, story.Days)
 	}
+	if opt.monitor < 0 {
+		log.Fatalf("bad -monitor %d", opt.monitor)
+	}
 	return opt
 }
 
@@ -337,6 +349,7 @@ func main() {
 		log.Fatal(err)
 	}
 	var opt options
+	var s settings
 	switch mode {
 	case saverSettings:
 		showSettings(hwnd)
@@ -344,9 +357,11 @@ func main() {
 	case saverPreview:
 		return // no preview yet: the little screen stays empty
 	case saverRun:
-		opt = parseFlags(nil, loadSettings())
+		s = loadSettings()
+		opt = parseFlags(nil, s)
 	default:
-		opt = parseFlags(os.Args[1:], loadSettings())
+		s = loadSettings()
+		opt = parseFlags(os.Args[1:], s)
 	}
 	g := &game{opt: opt, overlay: opt.debug, now: time.Now}
 	if opt.date != "" {
@@ -365,10 +380,10 @@ func main() {
 	default:
 		g.day = savedDay(g.now)
 	}
-	if opt.dataDir == "" {
+	if opt.dataDir == "" && !opt.blank {
 		g.opt.dataDir, g.dataErr = defaultDataDir()
 	}
-	if g.dataErr == nil {
+	if g.dataErr == nil && !opt.blank {
 		g.data, g.dataErr = loadGameData(g.opt.dataDir)
 	}
 	if g.dataErr != nil {
@@ -403,17 +418,32 @@ func main() {
 
 	ebiten.SetTPS(ticksPerSecond)
 	ebiten.SetWindowTitle("Johnny Castaway HD")
+	var others []*exec.Cmd
 	switch {
 	case opt.shot != "":
 		ebiten.SetWindowSize(320, 180)
 	case opt.windowed:
 		ebiten.SetWindowSize(1280, 720)
 	default:
+		monitors := ebiten.AppendMonitors(nil)
+		if opt.monitor < len(monitors) {
+			ebiten.SetMonitor(monitors[opt.monitor])
+		}
 		ebiten.SetFullscreen(true)
 		ebiten.SetCursorMode(ebiten.CursorModeHidden)
+		if mode == saverRun {
+			others = startOtherScreens(len(monitors), g.day(), s.MainOnly, &g.stop)
+		}
+	}
+	if opt.follow > 0 {
+		follow(opt.follow, &g.stop)
 	}
 
-	if err := ebiten.RunGame(g); err != nil && !errors.Is(err, ebiten.Termination) {
+	err = ebiten.RunGame(g)
+	for _, c := range others {
+		c.Process.Kill()
+	}
+	if err != nil && !errors.Is(err, ebiten.Termination) {
 		log.Fatal(err)
 	}
 	if g.frames > 1 {

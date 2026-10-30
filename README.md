@@ -77,6 +77,14 @@ doesn't exit.
 | `-date "2026-12-24 15:30"` | Pretend the clock started at this time, for night and holidays, without saving |
 | `-mute` | Play without sound |
 | `-frames N` | Exit after N ticks (64 a second) and log the measured tick rate |
+| `-monitor N` | Run fullscreen on monitor N (0, the default, is the main one) |
+| `-follow PID` | Exit when the process with this ID ends |
+| `-blank` | Show only black |
+
+With more than one monitor, `/s` starts a copy of itself on each of the others with
+`-monitor N -follow PID`: every monitor gets its own island and story, and only the main one plays
+sound. When any of them ends, all do. If the settings ask for Johnny on the main monitor only, the
+others get `-blank`.
 
 The picture is always 16:9: the original 4:3 scene is centered and the sea extends to the sides.
 On screens with another shape it gets black bars. The game clock is described in
