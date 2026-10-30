@@ -78,7 +78,10 @@ func newStoryScene(r *render.Renderer, d *gameData, rng *rand.Rand, now func() t
 
 // Tick advances the story by one redraw.
 func (s *storyScene) Tick() {
-	if s.island != nil {
+	// While Johnny stands after a walk, the original loads the next scene,
+	// and the waves stop too. They move again as the scene starts.
+	arrived := s.walk != nil && s.step == len(s.walk)-1 && s.wait > 1
+	if s.island != nil && !arrived {
 		s.island.Tick()
 	}
 	switch {

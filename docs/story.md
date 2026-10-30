@@ -78,8 +78,3 @@ to face the way the next scene starts, with his hands in his pockets. Walking be
 he passes behind the palm tree.
 
 Each picture of a walk shows for one redraw, the last for about 13 (see [timing.md](timing.md)).
-
-## Not yet done
-
-The shore waves' timing, which comes from jc_reborn and hasn't been checked against the
-original.

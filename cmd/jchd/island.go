@@ -120,11 +120,11 @@ func (d *gameData) screen(img *resource.Image) *render.Sprite {
 	return s
 }
 
-// Timing in redraws of 62.5 ms. Shore waves: jc_reborn's 8 ticks, not yet
-// checked against the original. Walking: one step per redraw and a pause of
-// about 13 after arriving, measured in recordings (docs/timing.md).
+// Timing in redraws of 62.5 ms, measured in recordings (docs/timing.md): one
+// shore wave moves on every redraw, and walking takes one step per redraw
+// and a pause of about 13 after arriving.
 const (
-	waveDelay   = 2
+	waveDelay   = 1
 	walkDelay   = 1
 	arriveDelay = 13
 )
