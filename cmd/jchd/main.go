@@ -290,14 +290,18 @@ func (g *game) screenshot() (bool, error) {
 	return true, f.Close()
 }
 
-func parseFlags(args []string) options {
+// parseFlags reads the options, which start out as the settings say.
+func parseFlags(args []string, s settings) options {
 	var opt options
 	var filter, shotSize string
-	flag.StringVar(&opt.dataDir, "data", "", "folder with RESOURCE.MAP, RESOURCE.001 and SCRANTIC.SCR (default: next to the program, or a gamedata folder there or in the current folder)")
+	if s.Filter == "" {
+		s.Filter = "sharp"
+	}
+	flag.StringVar(&opt.dataDir, "data", s.DataDir, "folder with RESOURCE.MAP, RESOURCE.001 and SCRANTIC.SCR (default: next to the program, or a gamedata folder there or in the current folder)")
 	flag.BoolVar(&opt.windowed, "windowed", false, "run in a window instead of fullscreen")
 	flag.BoolVar(&opt.debug, "debug", false, "keys control the display (F1 overlay, F2 filter, Esc exits)")
 	flag.IntVar(&opt.frames, "frames", 0, "exit after this many ticks (for automated tests)")
-	flag.StringVar(&filter, "filter", "sharp", "scaling filter: sharp, nearest or smooth")
+	flag.StringVar(&filter, "filter", s.Filter, "scaling filter: sharp, nearest or smooth")
 	flag.Uint64Var(&opt.seed, "seed", 0, "random seed (0 = random)")
 	flag.StringVar(&opt.shot, "shot", "", "render one frame to this PNG file and exit")
 	flag.StringVar(&shotSize, "shotsize", "1920x1080", "screen size for -shot")
@@ -307,19 +311,14 @@ func parseFlags(args []string) options {
 	flag.BoolVar(&opt.left, "left", false, "move the island to the left, as scenes such as fishing at C (MJFISHC) need")
 	flag.IntVar(&opt.day, "day", 0, "play this day of the story (1-11) instead of the saved one, without saving")
 	flag.StringVar(&opt.date, "date", "", `pretend the clock started at this time, such as "2026-12-24 15:30", without saving`)
-	flag.BoolVar(&opt.mute, "mute", false, "play without sound")
+	flag.BoolVar(&opt.mute, "mute", s.Mute, "play without sound")
 	flag.CommandLine.Parse(args)
 
-	switch filter {
-	case "sharp":
-		opt.filter = render.SharpBilinear
-	case "nearest":
-		opt.filter = render.Nearest
-	case "smooth":
-		opt.filter = render.Smooth
-	default:
+	f, ok := filters[filter]
+	if !ok {
 		log.Fatalf("unknown filter %q", filter)
 	}
+	opt.filter = f
 	if _, err := fmt.Sscanf(shotSize, "%dx%d", &opt.shotSize.X, &opt.shotSize.Y); err != nil || opt.shotSize.X <= 0 || opt.shotSize.Y <= 0 {
 		log.Fatalf("bad -shotsize %q", shotSize)
 	}
@@ -345,9 +344,9 @@ func main() {
 	case saverPreview:
 		return // no preview yet: the little screen stays empty
 	case saverRun:
-		opt = parseFlags(nil)
+		opt = parseFlags(nil, loadSettings())
 	default:
-		opt = parseFlags(os.Args[1:])
+		opt = parseFlags(os.Args[1:], loadSettings())
 	}
 	g := &game{opt: opt, overlay: opt.debug, now: time.Now}
 	if opt.date != "" {
