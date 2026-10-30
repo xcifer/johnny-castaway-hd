@@ -50,7 +50,7 @@ price is that its log goes nowhere, so use `jchd.exe` to see it.
 Windows starts a screensaver with `/s` to run it, `/c` for its settings and `/p` for the little
 preview in Screen Saver Settings; with no arguments it shows the settings. The settings (sound,
 picture, monitors and the game files' folder) are kept in `%APPDATA%\JohnnyCastawayHD\settings.json`;
-options given to `jchd.exe` override them. There is no preview yet.
+options given to `jchd.exe` override them. The preview shows the original's title picture.
 
 Run `bin/jchd.exe /s` (fullscreen; any key, mouse click or moving the mouse exits). It plays the story: scene after
 scene on the island, with Johnny walking from one to the next. Night, holidays (Halloween

@@ -355,7 +355,8 @@ func main() {
 		showSettings(hwnd)
 		return
 	case saverPreview:
-		return // no preview yet: the little screen stays empty
+		showPreview(hwnd)
+		return
 	case saverRun:
 		s = loadSettings()
 		opt = parseFlags(nil, s)
