@@ -3,7 +3,8 @@
 A from-scratch engine for the 1992 Sierra/Dynamix screensaver *Screen Antics: Johnny Castaway*,
 built as a native Windows 10/11 screensaver with optional HD art.
 
-**Status:** early development. Nothing playable yet.
+**Status:** in development. It plays the story with the original's sounds and understands the
+Windows screensaver arguments. Settings, the preview and HD art are still to come.
 
 ## You need your own copy of the original
 
@@ -35,12 +36,26 @@ Requires [Go](https://go.dev/dl/) 1.27 or newer. No C compiler is needed.
 go build -o bin/jchd.exe ./cmd/jchd
 ```
 
-Run `bin/jchd.exe` (fullscreen; any key or mouse click exits). It plays the story: scene after
+The same program built as `JohnnyCastawayHD.scr` is the screensaver:
+
+```
+go build -o bin/JohnnyCastawayHD.scr ./cmd/jchd
+```
+
+Windows starts a screensaver with `/s` to run it, `/c` for its settings and `/p` for the little
+preview in Screen Saver Settings; with no arguments it shows the settings. There are no settings
+and no preview yet.
+
+Run `bin/jchd.exe /s` (fullscreen; any key, mouse click or moving the mouse exits). It plays the story: scene after
 scene on the island, with Johnny walking from one to the next. Night, holidays (Halloween
 29-31 October, St Patrick's Day 15-17 March, Christmas 23-25 December, New Year 29 December
 to 1 January) and the raft Johnny builds follow the clock and the day of the story, which
 moves on once for each date the screensaver runs and is kept in
 `%APPDATA%\JohnnyCastawayHD\progress.json`. See [docs/story.md](docs/story.md).
+
+For development it also takes these options instead of `/s`, such as `bin/jchd.exe -windowed -debug`.
+Without `-windowed`, it runs fullscreen and exits as with `/s`; in a window, moving the mouse
+doesn't exit.
 
 | Option | Effect |
 |---|---|

@@ -1,9 +1,12 @@
 // Command jchd is the Johnny Castaway HD screensaver.
 //
-// It plays the story of Johnny on his island. For checking the original's
-// scripts, -ttm plays clips of one animation script and -ads one scene of a
-// scene script. Normally any key or mouse click exits. With -debug, keys
-// control the display instead (F1 overlay, F2 scaling filter) and Esc exits.
+// It plays the story of Johnny on his island. Windows starts it with /s to
+// run, /c for the settings and /p for the preview; built as
+// JohnnyCastawayHD.scr it can be installed as a screensaver. For checking
+// the original's scripts, -ttm plays clips of one animation script and -ads
+// one scene of a scene script. Normally any key, mouse click or mouse move
+// exits. With -debug, keys control the display instead (F1 overlay, F2
+// scaling filter) and Esc exits.
 package main
 
 import (
@@ -77,6 +80,7 @@ type game struct {
 	frames   int
 	start    time.Time // first tick
 	keys     []ebiten.Key
+	mouse    mouseWatch
 }
 
 func (g *game) newScene(w, h int) error {
@@ -173,7 +177,12 @@ func (g *game) quitRequested() bool {
 			return true
 		}
 	}
-	return false
+	// In a window, the mouse is often moved over it on the way elsewhere.
+	if g.opt.windowed {
+		return false
+	}
+	x, y := ebiten.CursorPosition()
+	return g.mouse.moved(image.Pt(x, y), mouseSlack*ebiten.Monitor().DeviceScaleFactor())
 }
 
 func (g *game) Draw(screen *ebiten.Image) {
@@ -281,7 +290,7 @@ func (g *game) screenshot() (bool, error) {
 	return true, f.Close()
 }
 
-func parseFlags() options {
+func parseFlags(args []string) options {
 	var opt options
 	var filter, shotSize string
 	flag.StringVar(&opt.dataDir, "data", "gamedata", "folder with RESOURCE.MAP, RESOURCE.001 and SCRANTIC.SCR")
@@ -299,7 +308,7 @@ func parseFlags() options {
 	flag.IntVar(&opt.day, "day", 0, "play this day of the story (1-11) instead of the saved one, without saving")
 	flag.StringVar(&opt.date, "date", "", `pretend the clock started at this time, such as "2026-12-24 15:30", without saving`)
 	flag.BoolVar(&opt.mute, "mute", false, "play without sound")
-	flag.Parse()
+	flag.CommandLine.Parse(args)
 
 	switch filter {
 	case "sharp":
@@ -324,7 +333,22 @@ func parseFlags() options {
 }
 
 func main() {
-	opt := parseFlags()
+	mode, hwnd, err := parseSaverArgs(os.Args[1:])
+	if err != nil {
+		log.Fatal(err)
+	}
+	var opt options
+	switch mode {
+	case saverSettings:
+		showSettings(hwnd)
+		return
+	case saverPreview:
+		return // no preview yet: the little screen stays empty
+	case saverRun:
+		opt = parseFlags(nil)
+	default:
+		opt = parseFlags(os.Args[1:])
+	}
 	g := &game{opt: opt, overlay: opt.debug, now: time.Now}
 	if opt.date != "" {
 		start, err := time.ParseInLocation("2006-01-02 15:04", opt.date, time.Local)
